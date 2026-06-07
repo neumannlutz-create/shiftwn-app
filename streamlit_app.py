@@ -6,6 +6,7 @@ import yfinance as yf
 import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
+import time
 
 st.set_page_config(page_title="ShiftWN AI", layout="wide", page_icon="⚡")
 
@@ -19,7 +20,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | Vollständige 3-6-9 + Photonic Fusion + Fibonacci v3.3")
+st.caption("Patent EPO SPECEPO-1/2 | Vollständige 3-6-9 + Photonic Fusion + Fibonacci v3.4")
 
 # ==================== ShiftWN Kern-Funktionen ====================
 def _normalize(window):
@@ -127,7 +128,7 @@ else:
 
 days = st.sidebar.slider("Tage Historie", 30, 365, 180)
 
-# ==================== KI-Kontroll-Modus & Email ====================
+# ==================== EINSTELLUNGEN ====================
 ki_control = st.sidebar.checkbox("KI-Kontroll-Modus aktivieren (ShiftWN als Wächter)", value=False)
 
 st.sidebar.subheader("Email-Alerts")
@@ -135,34 +136,14 @@ provider = st.sidebar.selectbox("Email-Anbieter", ["Gmail", "iCloud / Mac (@me.c
 email = st.sidebar.text_input("Deine Email-Adresse", "")
 email_password = st.sidebar.text_input("App-Passwort", type="password")
 
+auto_refresh = st.sidebar.checkbox("Auto-Refresh alle 60 Sekunden", value=True)
+
 st.sidebar.subheader("Alarm-Grenzwerte")
 vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.65, 1.0, 0.78, 0.01)
 drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.06, 0.30, 0.09, 0.01)
 confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 60, 95, 68, 5)
 
-if st.button("Test-Email senden", type="secondary"):
-    if email and email_password:
-        try:
-            if provider == "Gmail":
-                smtp_server = "smtp.gmail.com"
-                port = 465
-                server = smtplib.SMTP_SSL(smtp_server, port)
-            else:
-                smtp_server = "smtp.mail.me.com"
-                port = 587
-                server = smtplib.SMTP(smtp_server, port)
-                server.starttls()
-            msg = MIMEText("Test-Email von ShiftWN AI – Die App funktioniert!")
-            msg['Subject'] = "ShiftWN Test-Email"
-            msg['From'] = email
-            msg['To'] = email
-            server.login(email, email_password)
-            server.sendmail(email, email, msg.as_string())
-            server.quit()
-            st.success("✅ Test-Email erfolgreich gesendet!")
-        except Exception as e:
-            st.error(f"Fehler: {str(e)}")
-
+# ==================== ANALYSE ====================
 if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=True):
     with st.spinner("ShiftWN analysiert..."):
         analysis_time = datetime.now().strftime("%d.%m.%Y um %H:%M Uhr")
@@ -258,4 +239,10 @@ if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=
         fig.update_layout(height=600, template="plotly_dark", title=f"Preisverlauf {market_name} mit Fibonacci")
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("ShiftWN AI v3.3 – volle Photonic Fusion + Fibonacci + KI-Kontroll-Modus")
+        # ==================== AUTO-REFRESH ====================
+        if auto_refresh:
+            st.info("🔄 Auto-Refresh ist aktiv – nächste Aktualisierung in 60 Sekunden...")
+            time.sleep(60)
+            st.rerun()
+
+st.caption("ShiftWN AI v3.4 – mit Auto-Refresh + Fibonacci + KI-Kontroll-Modus")
