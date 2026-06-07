@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime
 
 st.set_page_config(page_title="ShiftWN AI", layout="wide", page_icon="⚡")
@@ -17,9 +19,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | Vollständige 3-6-9 + Photonic Fusion")
+st.caption("Patent EPO SPECEPO-1/2 | Vollständige 3-6-9 + Photonic Fusion v3.1")
 
-# ==================== ShiftWN Kern-Funktionen ====================
+# ==================== ShiftWN Kern-Funktionen (alle Module) ====================
 def _normalize(window):
     c = window[:, 3]
     ref = np.median(c) if np.median(c) > 0 else 1.0
@@ -64,27 +66,16 @@ def impulse(window):
     c = _normalize(window)[:, 3]
     r = np.diff(c)
     if len(r) < 4:
-        return {"centroid": 0.0, "dominant_power_ratio": 0.0, "flatness": 1.0, "kurtosis": 0.0}
+        return {"centroid": 0.0, "dominant_power_ratio": 0.0}
     r = r - np.mean(r)
     w = np.hanning(len(r))
     spec = np.abs(np.fft.rfft(r * w)) ** 2
     spec_sum = np.sum(spec) or 1.0
-    freqs = np.linspace(0.0, 1.0, len(spec))
-    centroid = float(np.sum(freqs * spec) / spec_sum)
     dom = float(np.max(spec) / spec_sum)
-    geo = np.exp(np.mean(np.log(spec + 1e-12)))
-    flat = float(geo / (np.mean(spec) + 1e-12))
-    m = r - np.mean(r)
-    var = np.mean(m**2) or 1e-12
-    kurt = float(np.mean(m**4) / (var**2) - 3.0)
-    return {"centroid": centroid, "dominant_power_ratio": dom, "flatness": flat, "kurtosis": kurt}
+    return {"centroid": float(np.sum(np.linspace(0,1,len(spec)) * spec) / spec_sum), "dominant_power_ratio": dom}
 
 def measure_shiftwn(window):
-    return {
-        "triangle": triangle(window),
-        "vortex": vortex(window),
-        "impulse": impulse(window)
-    }
+    return {"triangle": triangle(window), "vortex": vortex(window), "impulse": impulse(window)}
 
 # ==================== MÄRKTE ====================
 markets = {
@@ -120,13 +111,29 @@ else:
 
 days = st.sidebar.slider("Tage Historie", 30, 365, 180)
 
-# ==================== ALARM-GRENZWERTE ====================
+# ==================== LOCKERE GRENZWERTE + EMAIL ====================
 st.sidebar.subheader("Alarm-Grenzwerte")
-vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.70, 1.0, 0.82, 0.01)
-drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.08, 0.30, 0.12, 0.01)
-confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 60, 95, 72, 5)
+vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.65, 1.0, 0.78, 0.01)
+drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.06, 0.30, 0.09, 0.01)
+confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 60, 95, 68, 5)
 
-email = st.sidebar.text_input("Email-Adresse für Alerts (optional)")
+email = st.sidebar.text_input("Email-Adresse für Alerts", "")
+email_password = st.sidebar.text_input("Gmail App-Passwort (für echten Versand)", type="password")
+
+if st.button("Test-Email senden", type="secondary"):
+    if email and email_password:
+        try:
+            msg = MIMEText("Dies ist ein Test-Alert von ShiftWN AI.\n\nDie App funktioniert!")
+            msg['Subject'] = "ShiftWN Test-Email"
+            msg['From'] = email
+            msg['To'] = email
+            server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+            server.login(email, email_password)
+            server.sendmail(email, email, msg.as_string())
+            server.quit()
+            st.success("✅ Test-Email erfolgreich gesendet!")
+        except Exception as e:
+            st.error(f"Fehler: {e}")
 
 if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=True):
     with st.spinner("ShiftWN analysiert..."):
@@ -142,16 +149,14 @@ if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=
         window[:, 4] = 15000
 
         readings = measure_shiftwn(window)
-        
-        # Photonic Fusion (alle drei Module)
-        triangle_score = 1 - abs(readings["triangle"]["convergence"])
         vortex_score = readings["vortex"]["coherence"]
+        drift = readings["vortex"]["drift_direction"]
         impulse_score = readings["impulse"]["dominant_power_ratio"]
         
-        fusion = (triangle_score * 0.35 + vortex_score * 0.40 + impulse_score * 0.25)
-        ki_conf = fusion * 1.6 if vortex_score > 0.82 else fusion * 0.4
-
-        drift = readings["vortex"]["drift_direction"]
+        fusion = ( (1 - abs(readings["triangle"]["convergence"])) * 0.35 +
+                   vortex_score * 0.40 +
+                   impulse_score * 0.25 )
+        ki_conf = fusion * 1.6 if vortex_score > 0.80 else fusion * 0.45
 
         if vortex_score > vortex_threshold and drift > drift_threshold and ki_conf > confidence_threshold / 100:
             signal = "HEDGE_BUY"
@@ -169,29 +174,38 @@ if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=
             zeit = "Abwarten – kein klares Signal"
             haltez = "—"
 
-        # ==================== AUSGABE ====================
         st.subheader("Analyse-Ergebnis")
         st.write(f"**Analyse vom:** {analysis_time}")
 
         col1, col2, col3 = st.columns(3)
         col1.metric("**Signal**", f"{color} {signal}", f"Konfidenz {ki_conf:.1%}")
         col2.metric("Aktueller Preis", f"{current_price:.2f}")
-        col3.metric("Drift", f"{drift*100:+.1f}%")
+        col3.metric("Drift (20 Tage)", f"{drift*100:+.1f}%")
 
         st.success(f"**Empfohlene Aktion:** {zeit}")
         st.info(f"**Empfohlene Haltezeit:** {haltez}")
 
-        # Detaillierte Module
         st.write("**Dreiecksanalyse:**", "Konvergierend" if readings["triangle"]["convergence"] < -0.001 else "Divergierend")
         st.write("**Vortex-Analyse:**", f"Starker Vortex (Coherence {vortex_score:.3f})")
-        st.write("**Frequenzanalyse:**", f"Dominante Mode {readings['impulse']['dominant_power_ratio']:.3f}")
+        st.write("**Frequenzanalyse:**", f"Dominante Mode {impulse_score:.3f}")
 
-        if email and signal != "HOLD":
-            st.success(f"✅ Email-Alert würde an **{email}** gesendet werden!")
+        if email and email_password and signal != "HOLD":
+            try:
+                msg = MIMEText(f"ShiftWN Signal: {signal}\nMarkt: {market_name}\nPreis: {current_price:.2f}\nKonfidenz: {ki_conf:.1%}\nZeit: {analysis_time}")
+                msg['Subject'] = f"ShiftWN Alert: {signal} – {market_name}"
+                msg['From'] = email
+                msg['To'] = email
+                server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+                server.login(email, email_password)
+                server.sendmail(email, email, msg.as_string())
+                server.quit()
+                st.success("✅ Echter Email-Alert wurde gesendet!")
+            except:
+                st.warning("Email konnte nicht gesendet werden.")
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=list(range(len(closes[-200:]))), y=closes[-200:], mode='lines', name=market_name, line=dict(color='#00ff88', width=3)))
         fig.update_layout(height=600, template="plotly_dark", title=f"Preisverlauf {market_name}")
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("ShiftWN AI v3.0 – volle Photonic Fusion mit allen Modulen")
+st.caption("ShiftWN AI v3.1 – volle Photonic Fusion + echter Email-Versand")
