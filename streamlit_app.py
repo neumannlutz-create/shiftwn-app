@@ -22,7 +22,7 @@ st.markdown("""
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
 st.caption("Patent EPO SPECEPO-1/2 | Vollständige 3-6-9 + Photonic Fusion + Fibonacci v3.6")
 
-# ==================== ShiftWN Kern-Funktionen (unverändert) ====================
+# ==================== ShiftWN Kern-Funktionen ====================
 def _normalize(window):
     c = window[:, 3]
     ref = np.median(c) if np.median(c) > 0 else 1.0
@@ -128,12 +128,12 @@ else:
 
 days = st.sidebar.slider("Tage Historie", 30, 365, 180)
 
-# ==================== MESSAGING EINGABE (KI-WÄCHTER) ====================
+# ==================== MESSAGING (KI-WÄCHTER) ====================
 st.sidebar.subheader("KI-Wächter Modus")
 external_message = st.sidebar.text_area(
-    "Hier KI-Empfehlung einfügen (z. B. von ChatGPT, Grok...)",
-    height=120,
-    placeholder="Kopiere hier die Empfehlung einer anderen KI hinein..."
+    "Hier KI-Empfehlung einfügen",
+    height=100,
+    placeholder="Kopiere hier die Empfehlung von ChatGPT, Grok etc. hinein..."
 )
 
 ki_control = st.sidebar.checkbox("ShiftWN als KI-Wächter aktivieren", value=True)
@@ -180,16 +180,82 @@ if st.button("Test-Email senden", type="secondary"):
 # ==================== ANALYSE ====================
 if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=True):
     with st.spinner("ShiftWN analysiert..."):
-        # ... (die komplette Analyse wie in der vorherigen Version)
-        # (Der Code ist identisch mit der letzten vollen Version – ich habe ihn hier aus Platzgründen gekürzt. 
-        # Wenn du den vollständigen Code brauchst, sag Bescheid, dann schicke ich ihn komplett.)
+        analysis_time = datetime.now().strftime("%d.%m.%Y um %H:%M Uhr")
+        current_price = float(closes[-1])
 
-        # KI-Wächter Auswertung
+        window_size = min(50, len(closes))
+        window = np.zeros((window_size, 5))
+        window[:, 3] = closes[-window_size:]
+        window[:, 0] = closes[-window_size:] * 0.97
+        window[:, 1] = closes[-window_size:] * 1.08
+        window[:, 2] = closes[-window_size:] * 0.92
+        window[:, 4] = 15000
+
+        readings = measure_shiftwn(window)
+        vortex_score = readings["vortex"]["coherence"]
+        drift = readings["vortex"]["drift_direction"]
+        impulse_score = readings["impulse"]["dominant_power_ratio"]
+
+        fib_levels = fibonacci_levels(closes[-200:])
+        fib_score = 0.0
+        for name, price in fib_levels.items():
+            if abs(current_price - price) / current_price < 0.005:
+                fib_score = 0.3 if name in ["61.8%", "38.2%"] else 0.15
+                break
+
+        fusion = ((1 - abs(readings["triangle"]["convergence"])) * 0.30 +
+                  vortex_score * 0.35 +
+                  impulse_score * 0.25 +
+                  fib_score)
+        ki_conf = fusion * 1.6 if vortex_score > 0.80 else fusion * 0.45
+
+        if vortex_score > vortex_threshold and drift > drift_threshold and ki_conf > confidence_threshold / 100:
+            signal = "HEDGE_BUY"
+            color = "🟢"
+            zeit = "Heute oder morgen kaufen"
+            haltez = "3–8 Tage"
+        elif vortex_score > vortex_threshold and drift < -drift_threshold and ki_conf > confidence_threshold / 100:
+            signal = "HEDGE_SELL"
+            color = "🔴"
+            zeit = "Heute oder morgen verkaufen"
+            haltez = "2–6 Tage"
+        else:
+            signal = "HOLD"
+            color = "🟠"
+            zeit = "Abwarten – kein klares Signal"
+            haltez = "—"
+
+        st.subheader("Analyse-Ergebnis")
+        st.write(f"**Analyse vom:** {analysis_time}")
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("**Signal**", f"{color} {signal}", f"Konfidenz {ki_conf:.1%}")
+        col2.metric("Aktueller Preis", f"{current_price:.2f}")
+        col3.metric("Drift (20 Tage)", f"{drift*100:+.1f}%")
+
+        st.success(f"**Empfohlene Aktion:** {zeit}")
+        st.info(f"**Empfohlene Haltezeit:** {haltez}")
+
+        st.write("**Dreiecksanalyse:**", "Konvergierend" if readings["triangle"]["convergence"] < -0.001 else "Divergierend")
+        st.write("**Vortex-Analyse:**", f"Starker Vortex (Coherence {vortex_score:.3f})")
+        st.write("**Frequenzanalyse:**", f"Dominante Mode {impulse_score:.3f}")
+
         if external_message and ki_control:
             st.subheader("🛡️ KI-Wächter Auswertung")
             st.write("**Eingabe von externer KI:**")
             st.info(external_message)
-            st.write("**ShiftWN Bewertung:**")
-            st.success("ShiftWN hat die externe Empfehlung geometrisch geprüft und gibt ein eigenes Signal.")
 
-st.caption("ShiftWN AI v3.6 – mit Messaging-Eingabe (KI-Wächter) + Email-Test")
+        # Chart mit Fibonacci
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=list(range(len(closes[-200:]))), y=closes[-200:], mode='lines', name=market_name, line=dict(color='#00ff88', width=3)))
+        for name, price in fib_levels.items():
+            fig.add_hline(y=price, line_dash="dash", line_color="yellow", annotation_text=name)
+        fig.update_layout(height=600, template="plotly_dark", title=f"Preisverlauf {market_name} mit Fibonacci")
+        st.plotly_chart(fig, use_container_width=True)
+
+        if auto_refresh:
+            st.info("🔄 Auto-Refresh aktiv – nächste Aktualisierung in 60 Sekunden...")
+            time.sleep(60)
+            st.rerun()
+
+st.caption("ShiftWN AI v3.6 – mit Messaging-Eingabe (KI-Wächter)")
