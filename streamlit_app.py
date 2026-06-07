@@ -19,7 +19,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | Vollständige 3-6-9 + Photonic Fusion v3.2")
+st.caption("Patent EPO SPECEPO-1/2 | Vollständige 3-6-9 + Photonic Fusion + Fibonacci v3.3")
 
 # ==================== ShiftWN Kern-Funktionen ====================
 def _normalize(window):
@@ -77,6 +77,22 @@ def impulse(window):
 def measure_shiftwn(window):
     return {"triangle": triangle(window), "vortex": vortex(window), "impulse": impulse(window)}
 
+# ==================== Fibonacci ====================
+def fibonacci_levels(closes):
+    high = np.max(closes)
+    low = np.min(closes)
+    diff = high - low
+    levels = {
+        "0.0%": high,
+        "23.6%": high - 0.236 * diff,
+        "38.2%": high - 0.382 * diff,
+        "50.0%": high - 0.5 * diff,
+        "61.8%": high - 0.618 * diff,
+        "78.6%": high - 0.786 * diff,
+        "100.0%": low
+    }
+    return levels
+
 # ==================== MÄRKTE ====================
 markets = {
     "Bitcoin (BTC-USD)": "BTC-USD",
@@ -111,7 +127,9 @@ else:
 
 days = st.sidebar.slider("Tage Historie", 30, 365, 180)
 
-# ==================== EMAIL + GRENZWERTE ====================
+# ==================== KI-Kontroll-Modus & Email ====================
+ki_control = st.sidebar.checkbox("KI-Kontroll-Modus aktivieren (ShiftWN als Wächter)", value=False)
+
 st.sidebar.subheader("Email-Alerts")
 provider = st.sidebar.selectbox("Email-Anbieter", ["Gmail", "iCloud / Mac (@me.com / @mac.com)"])
 email = st.sidebar.text_input("Deine Email-Adresse", "")
@@ -122,7 +140,6 @@ vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.65, 1.0, 0.
 drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.06, 0.30, 0.09, 0.01)
 confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 60, 95, 68, 5)
 
-# Test-Button
 if st.button("Test-Email senden", type="secondary"):
     if email and email_password:
         try:
@@ -130,23 +147,21 @@ if st.button("Test-Email senden", type="secondary"):
                 smtp_server = "smtp.gmail.com"
                 port = 465
                 server = smtplib.SMTP_SSL(smtp_server, port)
-            else:  # iCloud / Mac
+            else:
                 smtp_server = "smtp.mail.me.com"
                 port = 587
                 server = smtplib.SMTP(smtp_server, port)
                 server.starttls()
-            
-            msg = MIMEText(f"Test-Email von ShiftWN AI\n\nDie App funktioniert einwandfrei!")
+            msg = MIMEText("Test-Email von ShiftWN AI – Die App funktioniert!")
             msg['Subject'] = "ShiftWN Test-Email"
             msg['From'] = email
             msg['To'] = email
-
             server.login(email, email_password)
             server.sendmail(email, email, msg.as_string())
             server.quit()
             st.success("✅ Test-Email erfolgreich gesendet!")
         except Exception as e:
-            st.error(f"Fehler beim Senden: {str(e)}")
+            st.error(f"Fehler: {str(e)}")
 
 if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=True):
     with st.spinner("ShiftWN analysiert..."):
@@ -166,9 +181,17 @@ if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=
         drift = readings["vortex"]["drift_direction"]
         impulse_score = readings["impulse"]["dominant_power_ratio"]
 
-        fusion = ((1 - abs(readings["triangle"]["convergence"])) * 0.35 +
-                  vortex_score * 0.40 +
-                  impulse_score * 0.25)
+        fib_levels = fibonacci_levels(closes[-200:])
+        fib_score = 0.0
+        for name, price in fib_levels.items():
+            if abs(current_price - price) / current_price < 0.005:
+                fib_score = 0.3 if name in ["61.8%", "38.2%"] else 0.15
+                break
+
+        fusion = ((1 - abs(readings["triangle"]["convergence"])) * 0.30 +
+                  vortex_score * 0.35 +
+                  impulse_score * 0.25 +
+                  fib_score)
         ki_conf = fusion * 1.6 if vortex_score > 0.80 else fusion * 0.45
 
         if vortex_score > vortex_threshold and drift > drift_threshold and ki_conf > confidence_threshold / 100:
@@ -200,7 +223,10 @@ if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=
 
         st.write("**Dreiecksanalyse:**", "Konvergierend" if readings["triangle"]["convergence"] < -0.001 else "Divergierend")
         st.write("**Vortex-Analyse:**", f"Starker Vortex (Coherence {vortex_score:.3f})")
-        st.write("**Frequenzanalyse / Rechteck:**", f"Dominante Mode {impulse_score:.3f}")
+        st.write("**Frequenzanalyse:**", f"Dominante Mode {impulse_score:.3f}")
+
+        if ki_control:
+            st.info("🛡️ KI-Kontroll-Modus aktiv – ShiftWN prüft KI-Empfehlungen")
 
         if email and email_password and signal != "HOLD":
             try:
@@ -213,22 +239,23 @@ if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=
                     port = 587
                     server = smtplib.SMTP(smtp_server, port)
                     server.starttls()
-                
                 msg = MIMEText(f"ShiftWN Signal: {signal}\nMarkt: {market_name}\nPreis: {current_price:.2f}\nKonfidenz: {ki_conf:.1%}\nZeit: {analysis_time}")
                 msg['Subject'] = f"ShiftWN Alert: {signal} – {market_name}"
                 msg['From'] = email
                 msg['To'] = email
-
                 server.login(email, email_password)
                 server.sendmail(email, email, msg.as_string())
                 server.quit()
-                st.success("✅ Echter Email-Alert wurde gesendet!")
+                st.success("✅ Echter Email-Alert gesendet!")
             except Exception as e:
                 st.warning(f"Email konnte nicht gesendet werden: {str(e)}")
 
+        # Chart mit Fibonacci
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=list(range(len(closes[-200:]))), y=closes[-200:], mode='lines', name=market_name, line=dict(color='#00ff88', width=3)))
-        fig.update_layout(height=600, template="plotly_dark", title=f"Preisverlauf {market_name}")
+        for name, price in fib_levels.items():
+            fig.add_hline(y=price, line_dash="dash", line_color="yellow", annotation_text=name)
+        fig.update_layout(height=600, template="plotly_dark", title=f"Preisverlauf {market_name} mit Fibonacci")
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("ShiftWN AI v3.2 – volle Photonic Fusion + Gmail + iCloud/Mac")
+st.caption("ShiftWN AI v3.3 – volle Photonic Fusion + Fibonacci + KI-Kontroll-Modus")
