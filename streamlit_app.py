@@ -3,9 +3,24 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime
+import time
 
-st.set_page_config(page_title="ShiftWN AI", layout="wide")
+st.set_page_config(page_title="ShiftWN AI", layout="wide", page_icon="⚡")
+
+# Schöneres Design
+st.markdown("""
+<style>
+    .main {background-color: #0e1117;}
+    .stApp {background-color: #0e1117; color: white;}
+    h1 {color: #00ff88;}
+    .metric-label {color: #aaaaaa;}
+    .stButton>button {background-color: #00ff88; color: black; font-weight: bold;}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
 st.caption("Patent EPO SPECEPO-1/2 | 3-6-9 Geometrie + Photonic Fusion")
 
@@ -87,13 +102,16 @@ else:
 
 days = st.sidebar.slider("Tage Historie", 30, 365, 180)
 
-# ==================== ALARM-GRENZWERTE ====================
+# ==================== ALARM-GRENZWERTE & E-MAIL ====================
 st.sidebar.subheader("Alarm-Grenzwerte")
 vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.70, 1.0, 0.85, 0.01)
 drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.10, 0.30, 0.18, 0.01)
 confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 60, 95, 75, 5)
 
-email = st.sidebar.text_input("Email-Adresse für Alerts (optional)")
+email = st.sidebar.text_input("Email-Adresse für Alerts", "")
+email_password = st.sidebar.text_input("Gmail App-Passwort (optional)", type="password")
+
+auto_refresh = st.sidebar.checkbox("Auto-Refresh alle 60 Sekunden", value=False)
 
 if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=True):
     with st.spinner("ShiftWN analysiert..."):
@@ -130,6 +148,7 @@ if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=
             zeit = "Abwarten – kein klares Signal"
             haltez = "Keine Position"
 
+        # === Ausgabe ===
         st.subheader("Analyse-Ergebnis")
         st.write(f"**Analyse vom:** {analysis_time}")
 
@@ -141,12 +160,32 @@ if st.button("⚡ ShiftWN-Analyse starten", type="primary", use_container_width=
         st.success(f"**Empfohlene Aktion:** {zeit}")
         st.info(f"**Empfohlene Haltezeit:** {haltez}")
 
-        if email and signal != "HOLD":
-            st.success(f"✅ Email-Alert würde an **{email}** gesendet werden!")
+        # === Echter Email-Versand ===
+        if email and signal != "HOLD" and email_password:
+            try:
+                msg = MIMEText(f"ShiftWN Signal: {signal}\nMarkt: {market_name}\nPreis: {current_price:.2f}\nKonfidenz: {ki_conf:.1%}\nZeit: {analysis_time}")
+                msg['Subject'] = f"ShiftWN Alert: {signal} – {market_name}"
+                msg['From'] = email
+                msg['To'] = email
 
+                server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+                server.login(email, email_password)
+                server.sendmail(email, email, msg.as_string())
+                server.quit()
+                st.success("✅ Echter Email-Alert wurde gesendet!")
+            except Exception as e:
+                st.warning("Email konnte nicht gesendet werden. Bitte App-Passwort prüfen.")
+
+        # Chart
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=list(range(len(closes[-200:]))), y=closes[-200:], mode='lines', name=market_name, line=dict(color='#00ff88', width=3)))
         fig.update_layout(height=600, template="plotly_dark", title=f"Preisverlauf {market_name}")
         st.plotly_chart(fig, use_container_width=True)
 
-st.caption("ShiftWN AI – finale Version mit einstellbaren Grenzwerten")
+        # Auto-Refresh
+        if auto_refresh:
+            st.info("🔄 Auto-Refresh ist aktiv – nächste Aktualisierung in 60 Sekunden...")
+            time.sleep(60)
+            st.rerun()
+
+st.caption("ShiftWN AI v2.0 – mit echtem Email-Versand & Auto-Refresh")
