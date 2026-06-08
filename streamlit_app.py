@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | v4.2 – Verbesserter KI-Wächter + Haltedauer")
+st.caption("Patent EPO SPECEPO-1/2 | v4.2 – Verbesserter KI-Wächter")
 
 # ==================== Kern-Funktionen ====================
 def _normalize(window):
@@ -85,7 +85,7 @@ def fibonacci_levels(closes):
               "78.6%": high - 0.786*diff, "100.0%": low}
     return levels
 
-# ==================== MÄRKTE + Daten mit Fallback ====================
+# ==================== MÄRKTE + Daten ====================
 markets = {
     "Bitcoin (BTC-USD)": "BTC-USD",
     "Phelix DE (Strom)": None,
@@ -109,7 +109,7 @@ def get_data(ticker):
                 return df['Close'].values.flatten()
         except:
             pass
-    # Fallback synthetische Daten
+    # Fallback
     np.random.seed(42)
     base = 98500 if ticker == "BTC-USD" else 120
     prices = []
@@ -130,8 +130,7 @@ st.sidebar.subheader("🔄 Echtzeit-Update")
 dauer_refresh = st.sidebar.checkbox("Dauer-Auto-Refresh aktivieren (alle 60 Sekunden)", value=True)
 
 st.sidebar.subheader("KI-Wächter Modus")
-external_message = st.sidebar.text_area("Hier KI-Empfehlung einfügen", height=150,
-                                        placeholder="Kopiere hier die Empfehlung von ChatGPT, Grok etc. hinein...")
+external_message = st.sidebar.text_area("Hier KI-Empfehlung einfügen", height=150, placeholder="Kopiere hier die Empfehlung von ChatGPT, Grok etc. hinein...")
 ki_control = st.sidebar.checkbox("ShiftWN als KI-Wächter aktivieren", value=True)
 
 st.sidebar.subheader("Alarm-Grenzwerte")
@@ -139,19 +138,19 @@ vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.60, 1.0, 0.
 drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.04, 0.30, 0.06, 0.01)
 confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 55, 95, 62, 1)
 
-# ==================== Verbesserter KI-Wächter Parser ====================
+# ==================== KI-Wächter Parser ====================
 def parse_ki_recommendation(text):
     text_lower = text.lower()
-    current = re.search(r'(\d{1,3}(?:\.\d{3})*|\d{4,6})\s*\$?', text_lower)
-    target = re.search(r'ziel\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})|target\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
-    stop = re.search(r'stop[- ]?loss\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})|stop\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
+    current = re.search(r'(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
+    target = re.search(r'ziel|target\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
+    stop = re.search(r'stop[- ]?loss|stop\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
     
     current_price = float(current.group(1).replace('.', '')) if current else None
-    target_price = float((target.group(1) or target.group(2)).replace('.', '')) if target else None
-    stop_loss = float((stop.group(1) or stop.group(2)).replace('.', '')) if stop else None
+    target_price = float(target.group(1).replace('.', '')) if target else None
+    stop_loss = float(stop.group(1).replace('.', '')) if stop else None
     
-    direction = "BUY" if any(w in text_lower for w in ["buy", "long", "kaufen", "strong buy"]) else \
-                "SELL" if any(w in text_lower for w in ["sell", "short", "verkaufen", "bearish"]) else "HOLD"
+    direction = "BUY" if any(w in text_lower for w in ["buy", "long", "kaufen"]) else \
+                "SELL" if any(w in text_lower for w in ["sell", "short", "verkaufen"]) else "HOLD"
     
     return {"direction": direction, "current": current_price, "target": target_price, "stop_loss": stop_loss}
 
@@ -188,9 +187,8 @@ else:
     color = "🟠"
     haltez = "Abwarten – kein klares Signal"
 
-# ==================== ANZEIGE ====================
+# Anzeige
 st.subheader(f"Analyse um {analysis_time}")
-
 col1, col2, col3 = st.columns(3)
 col1.metric("**Signal**", f"{color} {signal}")
 col2.metric("Aktueller Preis", f"{current_price:.2f}")
@@ -206,24 +204,21 @@ for name, price in fibonacci_levels(closes[-200:]).items():
 fig.update_layout(height=550, template="plotly_dark", title=f"Preisverlauf {market_name} mit Fibonacci")
 st.plotly_chart(fig, use_container_width=True)
 
-# ==================== VERBESSERTER KI-WÄCHTER ====================
+# ==================== Verbesserter KI-Wächter ====================
 if external_message and ki_control:
     ki_data = parse_ki_recommendation(external_message)
-    
     st.subheader("🛡️ KI-Wächter Auswertung")
     st.write("**Externe KI sagt:**")
     st.info(external_message)
-    
     st.write("**ShiftWN sagt:**")
     st.success(f"{color} {signal} | {haltez}")
     
-    # Direkter Vergleich
     if ki_data["direction"] == signal and signal != "HOLD":
-        st.success("✅ **ShiftWN bestätigt** die externe Empfehlung vollständig.")
+        st.success("✅ ShiftWN bestätigt die externe Empfehlung vollständig.")
     elif ki_data["direction"] != signal and signal != "HOLD":
-        st.error(f"❌ **ShiftWN widerspricht stark!** Externe KI sagt **{ki_data['direction']}**, ShiftWN sagt **{signal}**.")
+        st.error(f"❌ ShiftWN widerspricht! Externe KI sagt **{ki_data['direction']}**, ShiftWN sagt **{signal}**.")
     elif ki_data["direction"] == "HOLD" and signal != "HOLD":
-        st.warning("⚠️ Externe KI sagt HOLD, ShiftWN sieht jedoch ein klares Signal.")
+        st.warning("⚠️ Externe KI sagt HOLD – ShiftWN sieht jedoch ein klares Signal.")
 
 st.success(f"Automatisch aktualisiert um {datetime.now().strftime('%H:%M:%S')}")
 
@@ -232,4 +227,4 @@ if dauer_refresh:
     time.sleep(1)
     st.rerun()
 
-st.caption("ShiftWN AI v4.2 – Verbesserter KI-Wächter")
+st.caption("ShiftWN AI v4.2 – KI-Wächter verbessert")
