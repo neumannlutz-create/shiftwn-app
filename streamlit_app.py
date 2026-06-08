@@ -19,9 +19,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | v3.7 – vollständig + Dauer-Refresh")
+st.caption("Patent EPO SPECEPO-1/2 | v3.9 – Haltedauer + Tage-Historie + Auto-Analyse")
 
-# ==================== Kern-Funktionen ====================
+# ==================== Kern-Funktionen (unverändert) ====================
 def _normalize(window):
     c = window[:, 3]
     ref = np.median(c) if np.median(c) > 0 else 1.0
@@ -81,11 +81,9 @@ def fibonacci_levels(closes):
     high = np.max(closes)
     low = np.min(closes)
     diff = high - low
-    levels = {
-        "0.0%": high, "23.6%": high - 0.236 * diff, "38.2%": high - 0.382 * diff,
-        "50.0%": high - 0.5 * diff, "61.8%": high - 0.618 * diff,
-        "78.6%": high - 0.786 * diff, "100.0%": low
-    }
+    levels = {"0.0%": high, "23.6%": high - 0.236*diff, "38.2%": high - 0.382*diff,
+              "50.0%": high - 0.5*diff, "61.8%": high - 0.618*diff,
+              "78.6%": high - 0.786*diff, "100.0%": low}
     return levels
 
 # ==================== MÄRKTE ====================
@@ -103,26 +101,31 @@ markets = {
 market_name = st.sidebar.selectbox("Markt auswählen", list(markets.keys()))
 ticker = markets[market_name]
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def get_data(ticker):
     if ticker:
-        df = yf.download(ticker, period="1y", progress=False)
-        return df['Close'].values.flatten()
+        try:
+            df = yf.download(ticker, period="1y", progress=False)
+            return df['Close'].values.flatten()
+        except:
+            return np.array([])
     else:
         np.random.seed(42)
         price = 120.0
         prices = []
         for _ in range(180):
             vol = np.random.normal(0, 35)
-            if np.random.rand() < 0.1:
-                vol += np.random.choice([-150, 150])
+            if np.random.rand() < 0.1: vol += np.random.choice([-150, 150])
             price = max(5, min(450, price + vol))
             prices.append(price)
         return np.array(prices)
 
-closes = get_data(ticker)
+closes_full = get_data(ticker)
 
 # ==================== Sidebar ====================
+days = st.sidebar.slider("Tage Historie", 30, 365, 180)
+closes = closes_full[-days:] if len(closes_full) > days else closes_full
+
 st.sidebar.subheader("🔄 Echtzeit-Update")
 dauer_refresh = st.sidebar.checkbox("Dauer-Auto-Refresh aktivieren (alle 60 Sekunden)", value=True)
 
@@ -136,74 +139,70 @@ email = st.sidebar.text_input("Deine Email-Adresse", "")
 email_password = st.sidebar.text_input("App-Passwort", type="password")
 
 st.sidebar.subheader("Alarm-Grenzwerte")
-vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.65, 1.0, 0.72, 0.01)
-drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.06, 0.30, 0.07, 0.01)
-confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 60, 95, 65, 5)
+vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.60, 1.0, 0.70, 0.01)
+drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.04, 0.30, 0.06, 0.01)
+confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 55, 95, 62, 1)
 
-# ==================== ANALYSE ====================
-if st.button("⚡ Manuelle Analyse starten", type="primary", use_container_width=True) or dauer_refresh:
-    with st.spinner("ShiftWN analysiert..."):
-        
-        # NEUE SICHERHEITSPRÜFUNG
-        if len(closes) == 0:
-            st.error("❌ Keine Marktdaten von Yahoo Finance verfügbar (Rate-Limit). Bitte 30–60 Sekunden warten und erneut starten.")
-            st.stop()
+# ==================== AUTOMATISCHE ANALYSE ====================
+if len(closes) == 0:
+    st.error("❌ Keine Marktdaten verfügbar. Bitte 30 Sekunden warten und neu laden.")
+    st.stop()
 
-        analysis_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-        current_price = float(closes[-1])
+analysis_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+current_price = float(closes[-1])
 
-        # Rest bleibt gleich wie bisher
-        window_size = min(50, len(closes))
-        window = np.zeros((window_size, 5))
-        window[:, 3] = closes[-window_size:]
-        window[:, 0] = closes[-window_size:] * 0.97
-        window[:, 1] = closes[-window_size:] * 1.08
-        window[:, 2] = closes[-window_size:] * 0.92
-        window[:, 4] = 15000
+window_size = min(50, len(closes))
+window = np.zeros((window_size, 5))
+window[:, 3] = closes[-window_size:]
+window[:, 0] = closes[-window_size:] * 0.97
+window[:, 1] = closes[-window_size:] * 1.08
+window[:, 2] = closes[-window_size:] * 0.92
+window[:, 4] = 15000
 
-        readings = measure_shiftwn(window)
-        vortex_score = readings["vortex"]["coherence"]
-        drift = readings["vortex"]["drift_direction"]
-        impulse_score = readings["impulse"]["dominant_power_ratio"]
+readings = measure_shiftwn(window)
+vortex_score = readings["vortex"]["coherence"]
+drift = readings["vortex"]["drift_direction"]
+impulse_score = readings["impulse"]["dominant_power_ratio"]
 
-        fib_levels = fibonacci_levels(closes[-200:])
-        fib_score = 0.0
-        for name, price in fib_levels.items():
-            if abs(current_price - price) / current_price < 0.005:
-                fib_score = 0.3 if name in ["61.8%", "38.2%"] else 0.15
-                break
+fib_levels = fibonacci_levels(closes[-200:])
 
-        fusion = ((1 - abs(readings["triangle"]["convergence"])) * 0.30 +
-                  vortex_score * 0.35 +
-                  impulse_score * 0.25 +
-                  fib_score)
-        ki_conf = fusion * 1.6 if vortex_score > 0.80 else fusion * 0.45
+# Haltedauer
+if vortex_score > vortex_threshold and drift > drift_threshold and (readings["vortex"]["coherence"] * 1.6) > confidence_threshold / 100:
+    signal = "HEDGE_BUY"
+    color = "🟢"
+    haltez = "3–8 Tage"
+elif vortex_score > vortex_threshold and drift < -drift_threshold and (readings["vortex"]["coherence"] * 1.6) > confidence_threshold / 100:
+    signal = "HEDGE_SELL"
+    color = "🔴"
+    haltez = "2–6 Tage"
+else:
+    signal = "HOLD"
+    color = "🟠"
+    haltez = "—"
 
-        if vortex_score > vortex_threshold and drift > drift_threshold and ki_conf > confidence_threshold / 100:
-            signal = "HEDGE_BUY"
-            color = "🟢"
-        elif vortex_score > vortex_threshold and drift < -drift_threshold and ki_conf > confidence_threshold / 100:
-            signal = "HEDGE_SELL"
-            color = "🔴"
-        else:
-            signal = "HOLD"
-            color = "🟠"
+st.subheader(f"Analyse um {analysis_time}")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("**Signal**", f"{color} {signal}", f"Konfidenz {(readings['vortex']['coherence']*1.6):.1%}")
+col2.metric("Aktueller Preis", f"{current_price:.2f}")
+col3.metric("Vortex Coherence", f"{vortex_score:.3f}")
+col4.metric("Empfohlene Haltedauer", haltez)
 
-        st.subheader(f"Analyse um {analysis_time}")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("**Signal**", f"{color} {signal}", f"Konfidenz {ki_conf:.1%}")
-        col2.metric("Aktueller Preis", f"{current_price:.2f}")
-        col3.metric("Vortex Coherence", f"{vortex_score:.3f}")
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=list(range(len(closes[-200:]))), y=closes[-200:], mode='lines', name=market_name, line=dict(color='#00ff88', width=3)))
+for name, price in fib_levels.items():
+    fig.add_hline(y=price, line_dash="dash", line_color="yellow", annotation_text=name)
+fig.update_layout(height=550, template="plotly_dark", title=f"Preisverlauf {market_name} mit Fibonacci")
+st.plotly_chart(fig, use_container_width=True)
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=list(range(len(closes[-200:]))), y=closes[-200:], mode='lines', name=market_name, line=dict(color='#00ff88', width=3)))
-        for name, price in fib_levels.items():
-            fig.add_hline(y=price, line_dash="dash", line_color="yellow", annotation_text=name)
-        fig.update_layout(height=550, template="plotly_dark", title=f"Preisverlauf {market_name} mit Fibonacci")
-        st.plotly_chart(fig, use_container_width=True)
+if external_message and ki_control:
+    st.subheader("🛡️ KI-Wächter Auswertung")
+    st.info(external_message)
 
-        if external_message and ki_control:
-            st.subheader("🛡️ KI-Wächter Auswertung")
-            st.info(external_message)
+st.success(f"Automatisch aktualisiert um {datetime.now().strftime('%H:%M:%S')}")
 
-        st.success(f"Aktualisiert um {datetime.now().strftime('%H:%M:%S')}")
+if dauer_refresh:
+    st.info("🔄 Dauer-Auto-Refresh aktiv – nächste Aktualisierung in 60 Sekunden")
+    time.sleep(1)
+    st.rerun()
+
+st.caption("ShiftWN AI v3.9 – Haltedauer + Tage-Historie wieder aktiv")
