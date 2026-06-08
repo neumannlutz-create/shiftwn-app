@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | v4.3 – Finaler KI-Wächter")
+st.caption("Patent EPO SPECEPO-1/2 | v4.3 – KI-Wächter final fix")
 
 # ==================== Kern-Funktionen (unverändert) ====================
 def _normalize(window):
@@ -109,7 +109,6 @@ def get_data(ticker):
                 return df['Close'].values.flatten()
         except:
             pass
-    # Fallback
     np.random.seed(42)
     base = 98500 if ticker == "BTC-USD" else 120
     prices = []
@@ -138,21 +137,28 @@ vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.60, 1.0, 0.
 drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.04, 0.30, 0.06, 0.01)
 confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 55, 95, 62, 1)
 
-# ==================== Verbesserter KI-Wächter Parser & Vergleich ====================
+# ==================== VERBESSERTER KI-WÄCHTER PARSER ====================
 def parse_ki_recommendation(text):
+    if not text:
+        return {"direction": "HOLD", "current": None, "target": None, "stop_loss": None}
     text_lower = text.lower()
-    current = re.search(r'(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
-    target = re.search(r'ziel|target\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
-    stop = re.search(r'stop[- ]?loss|stop\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
     
-    current_price = float(current.group(1).replace('.', '')) if current else None
-    target_price = float(target.group(1).replace('.', '')) if target else None
-    stop_loss = float(stop.group(1).replace('.', '')) if stop else None
+    # Current Price
+    current_match = re.search(r'preis\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower) or re.search(r'(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
+    current = float(current_match.group(1).replace('.', '')) if current_match else None
+    
+    # Ziel / Target
+    target_match = re.search(r'(ziel|target)\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
+    target = float(target_match.group(2).replace('.', '')) if target_match else None
+    
+    # Stop-Loss
+    stop_match = re.search(r'(stop[- ]?loss|stop)\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
+    stop_loss = float(stop_match.group(2).replace('.', '')) if stop_match else None
     
     direction = "BUY" if any(w in text_lower for w in ["buy", "long", "kaufen", "strong buy"]) else \
                 "SELL" if any(w in text_lower for w in ["sell", "short", "verkaufen", "bearish"]) else "HOLD"
     
-    return {"direction": direction, "current": current_price, "target": target_price, "stop_loss": stop_loss}
+    return {"direction": direction, "current": current, "target": target, "stop_loss": stop_loss}
 
 # ==================== ANALYSE ====================
 if len(closes) == 0:
@@ -187,7 +193,6 @@ else:
     color = "🟠"
     haltez = "Abwarten – kein klares Signal"
 
-# ==================== Anzeige ====================
 st.subheader(f"Analyse um {analysis_time}")
 
 col1, col2, col3 = st.columns(3)
@@ -209,7 +214,6 @@ if external_message and ki_control:
     ki_data = parse_ki_recommendation(external_message)
     
     st.subheader("🛡️ KI-Wächter Auswertung")
-    
     col_a, col_b = st.columns(2)
     with col_a:
         st.write("**Externe KI sagt:**")
@@ -218,17 +222,12 @@ if external_message and ki_control:
         st.write("**ShiftWN sagt:**")
         st.success(f"{color} {signal} | {haltez}")
     
-    # Vergleich
     if ki_data["direction"] == signal and signal != "HOLD":
-        st.success("✅ **ShiftWN bestätigt** die externe Empfehlung vollständig.")
+        st.success("✅ ShiftWN bestätigt die externe Empfehlung vollständig.")
     elif ki_data["direction"] != signal and signal != "HOLD":
-        st.error(f"❌ **ShiftWN widerspricht deutlich!** Externe KI sagt **{ki_data['direction']}**, ShiftWN sagt **{signal}**.")
+        st.error(f"❌ ShiftWN widerspricht! Externe KI sagt **{ki_data['direction']}**, ShiftWN sagt **{signal}**.")
     elif ki_data["direction"] == "HOLD" and signal != "HOLD":
         st.warning("⚠️ Externe KI sagt HOLD – ShiftWN sieht jedoch ein klares Signal.")
-
-    # Zusätzliche Info
-    if ki_data["target"]:
-        st.write(f"Externe KI Ziel: **{ki_data['target']:.0f}** | ShiftWN aktueller Trend: {'aufwärts' if drift > 0 else 'abwärts'}")
 
 st.success(f"Automatisch aktualisiert um {datetime.now().strftime('%H:%M:%S')}")
 
@@ -237,4 +236,4 @@ if dauer_refresh:
     time.sleep(1)
     st.rerun()
 
-st.caption("ShiftWN AI v4.3 – Finaler KI-Wächter")
+st.caption("ShiftWN AI v4.3 – KI-Wächter final fix")
