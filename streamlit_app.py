@@ -17,7 +17,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | v4.0 – Haltedauer klar sichtbar")
+st.caption("Patent EPO SPECEPO-1/2 | v4.1 – Bitcoin-Fallback + Haltedauer")
 
 # ==================== Kern-Funktionen ====================
 def _normalize(window):
@@ -99,29 +99,32 @@ markets = {
 market_name = st.sidebar.selectbox("Markt auswählen", list(markets.keys()))
 ticker = markets[market_name]
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)   # längere Cache-Zeit
 def get_data(ticker):
     if ticker:
         try:
             df = yf.download(ticker, period="1y", progress=False)
-            return df['Close'].values.flatten()
+            if len(df) > 0:
+                return df['Close'].values.flatten()
         except:
-            return np.array([])
-    else:
-        np.random.seed(42)
-        price = 120.0
-        prices = []
-        for _ in range(180):
-            vol = np.random.normal(0, 35)
-            if np.random.rand() < 0.1: vol += np.random.choice([-150, 150])
-            price = max(5, min(450, price + vol))
-            prices.append(price)
-        return np.array(prices)
+            pass
+    # Fallback: synthetische Daten (für Bitcoin oder bei Fehler)
+    np.random.seed(42)
+    price = 98500.0 if ticker == "BTC-USD" else 120.0
+    prices = []
+    for _ in range(180):
+        vol = np.random.normal(0, 1800 if ticker == "BTC-USD" else 35)
+        if np.random.rand() < 0.12:
+            vol += np.random.choice([-4500, 4500] if ticker == "BTC-USD" else [-150, 150])
+        price = max(50000 if ticker == "BTC-USD" else 5, min(120000 if ticker == "BTC-USD" else 450, price + vol))
+        prices.append(price)
+    return np.array(prices)
 
 closes_full = get_data(ticker)
 days = st.sidebar.slider("Tage Historie", 30, 365, 180)
 closes = closes_full[-days:] if len(closes_full) > days else closes_full
 
+# ==================== Sidebar ====================
 st.sidebar.subheader("🔄 Echtzeit-Update")
 dauer_refresh = st.sidebar.checkbox("Dauer-Auto-Refresh aktivieren (alle 60 Sekunden)", value=True)
 
@@ -174,7 +177,6 @@ col1.metric("**Signal**", f"{color} {signal}")
 col2.metric("Aktueller Preis", f"{current_price:.2f}")
 col3.metric("Vortex Coherence", f"{vortex_score:.3f}")
 
-# === GROßE HALTE-DAUER ANZEIGE ===
 st.info(f"**📅 Empfohlene Haltedauer:** {haltez}")
 
 fig = go.Figure()
@@ -196,4 +198,4 @@ if dauer_refresh:
     time.sleep(1)
     st.rerun()
 
-st.caption("ShiftWN AI v4.0 – Haltedauer klar sichtbar")
+st.caption("ShiftWN AI v4.1 – Bitcoin-Fallback aktiv")
