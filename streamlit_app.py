@@ -9,10 +9,11 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 import yfinance as yf
+import re
 
 st.set_page_config(page_title="ShiftWN Wächter", page_icon="⚡", layout="wide")
 st.title("⚡ ShiftWN Markt-Wächter")
-st.caption("Neuaufbau · Schritt 4: Permutationsverteilung (robustes DAX-Laden)")
+st.caption("Neuaufbau · Schritt 5: KI-Wächter")
 
 # ============================================================
 #  ANALYSE-ENGINE
@@ -71,6 +72,70 @@ def permutationstest(kurse, metrik, basiswert, n_perm=400, seed=0):
     return beobachtet, p, surrogate
 
 # ============================================================
+#  KI-WÄCHTER
+#  Liest NUR Felder aus dem Empfehlungstext (kein eigenes Markturteil)
+#  und hält die Behauptung gegen den gemessenen Struktur-Befund.
+# ============================================================
+
+def extrahiere_empfehlung(text):
+    """Liest Richtung/Konfidenz/Ziel/Stop aus Text. Trifft KEINE Marktaussage.
+    (Später durch einen LLM-Aufruf ersetzbar, der dasselbe Dict liefert.)"""
+    out = {"richtung": "HOLD", "konfidenz": None, "ziel": None, "stop": None}
+    if not text:
+        return out
+    tl = text.lower()
+    m = re.search(r"(?:konfidenz|confidence)\s*[:=]?\s*(\d{1,3})\s*%?", tl)
+    out["konfidenz"] = int(m.group(1)) if m else None
+    tlp = re.sub(r"(?:konfidenz|confidence)\s*[:=]?\s*\d{1,3}\s*%?", " ", tl)
+    num = r"(\d{1,3}(?:\.\d{3})+|\d{4,6})"
+    f = lambda s: float(s.replace(".", ""))
+    z = re.search(rf"(?:ziel|target|kursziel)\s*[:=]?\s*{num}", tlp)
+    out["ziel"] = f(z.group(1)) if z else None
+    s = re.search(rf"(?:stop[- ]?loss|stop)\s*[:=]?\s*{num}", tlp)
+    out["stop"] = f(s.group(1)) if s else None
+    sell = ["sell", "short", "verkaufen", "verkauf", "bearish"]
+    buy = ["buy", "long", "kaufen", "kauf", "bullish"]
+    hat_sell = any(re.search(rf"\b{re.escape(w)}\b", tl) for w in sell)
+    hat_buy = any(re.search(rf"\b{re.escape(w)}\b", tl) for w in buy)
+    if hat_sell and not hat_buy:
+        out["richtung"] = "SELL"
+    elif hat_buy and not hat_sell:
+        out["richtung"] = "BUY"
+    elif hat_buy and hat_sell:
+        out["richtung"] = "CONFLICT"
+    return out
+
+def waechter_urteil(richtung, struktur_erkannt, tendenz, p):
+    """Hält die externe Behauptung gegen den Struktur-Befund. Prognosefrei."""
+    if richtung == "CONFLICT":
+        return "warn", "⚠️ Empfehlung mehrdeutig (Kauf- und Verkaufsbegriffe). Bitte manuell prüfen."
+    # Struktur-Richtung aus der Tendenz ableiten
+    if tendenz.startswith("Trending") or tendenz == "Momentum":
+        struktur_dir = "BUY"
+    elif tendenz == "Mean-Reversion":
+        struktur_dir = "SELL"
+    else:
+        struktur_dir = "NEUTRAL"
+
+    if not struktur_erkannt:
+        if richtung in ("BUY", "SELL"):
+            return "error", (f"❌ Unplausibel: Die Empfehlung beansprucht Richtung **{richtung}**, "
+                             f"die Reihe ist jedoch statistisch nicht vom Random Walk unterscheidbar "
+                             f"(p={p:.3f}). Die behauptete Richtung ist in den Daten nicht messbar.")
+        return "info", "Empfehlung sieht keine Richtung – Reihe ist random-walk-konsistent. Übereinstimmung."
+    # Struktur erkannt:
+    if richtung == "HOLD":
+        return "warn", f"⚠️ Empfehlung sagt HOLD – die Reihe zeigt jedoch messbare Struktur ({tendenz})."
+    if struktur_dir == "NEUTRAL":
+        return "info", f"Struktur messbar ({tendenz}), aber ohne klare Richtungszuordnung – Behauptung nicht prüfbar."
+    if richtung == struktur_dir:
+        return "success", (f"✅ Plausibel: Richtung **{richtung}** ist mit der messbaren Struktur "
+                           f"({tendenz}) vereinbar. Hinweis: statistische Vereinbarkeit, **kein** "
+                           f"Kaufsignal und keine Handelbarkeitsgarantie.")
+    return "error", (f"❌ Widerspruch: Empfehlung sagt **{richtung}**, die messbare Struktur "
+                     f"deutet jedoch auf **{struktur_dir}** ({tendenz}).")
+
+# ============================================================
 #  AUSWAHL + DATEN
 # ============================================================
 
@@ -97,6 +162,11 @@ with st.sidebar:
     st.divider()
     alpha = st.slider("Signifikanzniveau α", 0.01, 0.10, 0.05, 0.01)
     n_perm = st.slider("Permutationen", 100, 800, 400, 50)
+    st.divider()
+    st.subheader("🛡️ KI-Wächter")
+    externe_empfehlung = st.text_area("KI-Empfehlung einfügen", height=150,
+        placeholder="Empfehlung von ChatGPT, Grok etc. hier einfügen ...")
+    waechter_an = st.checkbox("Wächter aktivieren", value=True)
 
 ticker_liste = MAERKTE[markt_name]
 period, interval = GRANULARITAET[gran_name]
@@ -211,4 +281,29 @@ with rechts:
 st.caption("Liegt der grüne Strich klar außerhalb der grauen Verteilung, weicht die Reihe vom "
            "Random Walk ab. Liegt er mittendrin: Rauschen. · "
            f"{len(segment)} Datenpunkte · Statistische Signifikanz ≠ Handelbarkeit. Keine Anlageberatung.")
-st.info("Nächster Schritt: den KI-Wächter einbauen (externe Empfehlung einfügen + Plausibilitätsurteil).")
+
+# ============================================================
+#  WÄCHTER-AUSWERTUNG
+# ============================================================
+if externe_empfehlung and waechter_an:
+    emp = extrahiere_empfehlung(externe_empfehlung)
+    richtung = emp["richtung"]
+
+    st.markdown("---")
+    st.subheader("🛡️ Wächter-Urteil")
+    wa, wb = st.columns(2)
+    with wa:
+        st.write("**Externe KI sagt (extrahiert):**")
+        st.info(externe_empfehlung)
+        konf = f" · Konfidenz {emp['konfidenz']} %" if emp["konfidenz"] is not None else ""
+        st.caption(f"Erkannte Richtung: **{richtung}**{konf} · Ziel {emp['ziel']} · Stop {emp['stop']}")
+    with wb:
+        st.write("**ShiftWN misst (Struktur):**")
+        st.success(f"{befund_icon} {befund_text} · p={min_p:.3f} · Tendenz: {tendenz}")
+
+    status, urteil = waechter_urteil(richtung, struktur_erkannt, tendenz, min_p)
+    {"success": st.success, "error": st.error,
+     "warn": st.warning, "info": st.info}[status](urteil)
+
+st.caption("ShiftWN Markt-Wächter · Misst Abweichung vom Random Walk (Lo-MacKinlay VR, Runs, ACF) "
+           "mit Permutationstest. Prognosefrei, deterministisch, auditierbar. Keine Anlageberatung.")
