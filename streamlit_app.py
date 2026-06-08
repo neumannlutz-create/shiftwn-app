@@ -1,8 +1,9 @@
 """
-ShiftWN Markt-Wächter – Neuaufbau
-Schritt 4: Permutationsverteilung als Grafik, zweispaltiges Layout.
-Links Preisverlauf, rechts die Surrogat-Verteilung mit beobachtetem Wert.
-Noch ohne Wächter (kommt in Schritt 5).
+ShiftWN Markt-Wächter
+Patentierter Kern: Triangle · Vortex · Impulse FFT · Photonics (Fusion).
+ShiftWN arbeitet als geometrisches Korrektiv über bestehender Trading-
+Intelligenz: es prüft die Kohärenz einer Empfehlung gegen die Marktgeometrie.
+Patent EPA EP25221251.9 / SPECEPO-1/2.
 """
 
 import streamlit as st
@@ -10,76 +11,152 @@ import numpy as np
 import plotly.graph_objects as go
 import yfinance as yf
 import re
+from datetime import datetime
 
-st.set_page_config(page_title="ShiftWN Wächter", page_icon="⚡", layout="wide")
-st.title("⚡ ShiftWN Markt-Wächter")
-st.caption("Neuaufbau · Schritt 5: KI-Wächter")
+st.set_page_config(page_title="ShiftWN AI", page_icon="⚡", layout="wide")
+st.markdown("""
+<style>
+    .stApp {background-color: #0e1117; color: #e6e6e6;}
+    h1, h2, h3 {color: #00ff88;}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("⚡ ShiftWN AI – Geometrischer Markt-Wächter")
+st.caption("Patent EPA EP25221251.9 · Triangle · Vortex · Impulse FFT · Photonics")
 
 # ============================================================
-#  ANALYSE-ENGINE
-#  Misst, ob eine Kursreihe vom Random Walk abweicht. Prognosefrei.
-#  Statistische Signifikanz ist NICHT gleich Handelbarkeit.
+#  PATENTIERTER SHIFTWN-KERN
+#  Vier Operatoren + Photonics-Fusion. Geometrisches Korrektiv,
+#  das die Marktstruktur misst und die Kohärenz einer externen
+#  Empfehlung dagegen prüft. Keine Prognose, keine Anlageberatung.
 # ============================================================
 
-def normiere(kurse):
-    c = np.asarray(kurse, float)
+def _normalize(window):
+    """Normalisiert ein OHLCV-Fenster auf robuste Skala (Median/MAD)."""
+    c = window[:, 3]
     ref = np.median(c) if np.median(c) > 0 else 1.0
-    skala = np.median(np.abs(np.diff(c))) or 0.01 * ref
-    return (c - ref) / skala
+    scale = np.median(np.abs(np.diff(c))) or 0.01 * ref
+    norm = np.zeros_like(window, dtype=float)
+    norm[:, 0] = (window[:, 0] - ref) / scale
+    norm[:, 1] = (window[:, 1] - ref) / scale
+    norm[:, 2] = (window[:, 2] - ref) / scale
+    norm[:, 3] = (c - ref) / scale
+    norm[:, 4] = window[:, 4] / (np.median(window[:, 4]) or 1.0)
+    return norm
 
-def varianz_ratio(kurse, q=5):
-    p = normiere(kurse); r = np.diff(p); n = len(r)
-    if n < q + 2:
-        return 1.0
-    var1 = np.sum((r - r.mean())**2) / n
-    rq = p[q:] - p[:-q]
-    varq = np.sum((rq - rq.mean())**2) / len(rq)
-    return float(varq / (q * var1)) if var1 else 1.0
+def triangle(window):
+    """Triangle Analysis: Trend-Geometrie / strukturelle Asymmetrie.
+    Misst die Konvergenz der lokalen Dreiecksflächen (Steigungs-/Spannweiten-
+    Struktur). Stark in Trending-Phasen."""
+    c = _normalize(window)[:, 3]
+    if len(c) < 3:
+        return {"convergence": 0.0}
+    areas = []
+    for i in range(1, len(c) - 1):
+        p0 = np.array([i - 1, c[i - 1]])
+        p1 = np.array([i, c[i]])
+        p2 = np.array([i + 1, c[i + 1]])
+        area = 0.5 * ((p1[0] - p0[0]) * (p2[1] - p0[1]) - (p2[0] - p0[0]) * (p1[1] - p0[1]))
+        areas.append(area)
+    x = np.arange(len(areas))
+    slope = np.polyfit(x, np.abs(areas), 1)[0] if len(areas) >= 2 else 0.0
+    return {"convergence": float(slope)}
 
-def runs_z(kurse):
-    r = np.diff(normiere(kurse)); s = np.sign(r); s = s[s != 0]; n = len(s)
-    if n < 10:
-        return 0.0
-    runs = 1 + np.sum(s[1:] != s[:-1])
-    npos = np.sum(s > 0); nneg = n - npos
-    if npos == 0 or nneg == 0:
-        return 0.0
-    erwartung = 1 + 2 * npos * nneg / n
-    varianz = (2 * npos * nneg * (2 * npos * nneg - n)) / (n * n * (n - 1))
-    return float((runs - erwartung) / np.sqrt(varianz)) if varianz > 0 else 0.0
+def vortex(window):
+    """Vortex Dynamics: rotierende Marktbewegung / zyklische Inkohärenz.
+    Phasenraum (Position, Geschwindigkeit) -> Kohärenz der Drehung + Drift.
+    Stark in Seitwärtsphasen / Mean-Reversion."""
+    c = _normalize(window)[:, 3]
+    if len(c) < 4:
+        return {"coherence": 0.0, "drift_direction": 0.0}
+    pos = c - np.mean(c)
+    vel = np.gradient(pos)
+    P = np.column_stack([pos, vel])
+    ang = np.arctan2(P[:, 1], P[:, 0])
+    dphi = np.diff(ang)
+    dphi = (dphi + np.pi) % (2 * np.pi) - np.pi
+    coherence = float(np.clip(np.mean(np.abs(dphi)) / (np.std(dphi) + 1e-8), 0, 1))
+    slope = float(np.polyfit(np.arange(len(c)), c, 1)[0])
+    drift = float(np.tanh(slope * 3))
+    return {"coherence": coherence, "drift_direction": drift}
 
-def acf_lag1(kurse):
-    r = np.diff(normiere(kurse)); r = r - r.mean()
-    nenner = np.sum(r * r) or 1e-12
-    return float(np.sum(r[:-1] * r[1:]) / nenner)
+def impulse(window):
+    """Impulse FFT: Frequenzbrüche / Volatilitäts-Cluster.
+    Rechteckwelle (Returns) -> Fourier-Spektrum -> dominante Leistung +
+    spektraler Schwerpunkt. Stark in volatilen Phasen."""
+    c = _normalize(window)[:, 3]
+    r = np.diff(c)
+    if len(r) < 4:
+        return {"centroid": 0.0, "dominant_power_ratio": 0.0}
+    r = r - np.mean(r)
+    w = np.hanning(len(r))
+    spec = np.abs(np.fft.rfft(r * w)) ** 2
+    spec_sum = np.sum(spec) or 1.0
+    dom = float(np.max(spec) / spec_sum)
+    centroid = float(np.sum(np.linspace(0, 1, len(spec)) * spec) / spec_sum)
+    return {"centroid": centroid, "dominant_power_ratio": dom}
 
-def permutationstest(kurse, metrik, basiswert, n_perm=400, seed=0):
-    """Gibt beobachteten Wert, p-Wert UND die Surrogat-Verteilung zurück."""
-    rng = np.random.default_rng(seed)
-    c = normiere(kurse); steps = np.diff(c)
-    beobachtet = metrik(kurse)
-    abweichung = abs(beobachtet - basiswert)
-    surrogate = np.empty(n_perm)
-    zaehler = 0
-    for i in range(n_perm):
-        perm = rng.permutation(steps)
-        surrogat_reihe = np.concatenate([[c[0]], c[0] + np.cumsum(perm)])
-        wert = metrik(surrogat_reihe)
-        surrogate[i] = wert
-        if abs(wert - basiswert) >= abweichung:
-            zaehler += 1
-    p = (zaehler + 1) / (n_perm + 1)
-    return beobachtet, p, surrogate
+def photonics(tri, vor, imp):
+    """Photonics-Fusion: signal-adaptive Gewichtung der drei Operatoren
+    über komplexe Phasen-Modulation. Bestimmt den Marktmodus (Trending /
+    Ranging / Volatile), gewichtet adaptiv und fusioniert per Interferenz
+    zu einem kohärenten Gesamtbild.
+
+    S = w1*T + w2*V + w3*F  mit signal-adaptiven w_i (Summe = 1)."""
+    # Operator-Scores in [0,1] bringen
+    T = float(np.tanh(abs(tri["convergence"]) * 5))          # Trend-/Konvergenzstärke
+    V = float(vor["coherence"])                               # Rotations-Kohärenz
+    F = float(imp["dominant_power_ratio"])                    # spektrale Dominanz
+
+    # Signal-adaptive Gewichte: der jeweils stärkste Operator bestimmt den Modus
+    raw = np.array([T, V, F]) + 1e-6
+    w = raw / raw.sum()
+
+    # Phasen-Modulation: jedem Operator eine Phase zuordnen, dann
+    # kohärent (komplex) aufsummieren -> konstruktive/destruktive Interferenz
+    phases = np.array([0.0, 2 * np.pi / 3, 4 * np.pi / 3])    # 3 Operatoren, 120° versetzt
+    amps = np.array([T, V, F])
+    field = np.sum(w * amps * np.exp(1j * phases))
+    coherence_fused = float(np.clip(np.abs(field), 0, 1))     # |resultierendes Feld|
+
+    modus = ["TRENDING", "RANGING", "VOLATILE"][int(np.argmax([T, V, F]))]
+    dominant = ["Triangle", "Vortex", "Impulse FFT"][int(np.argmax([T, V, F]))]
+
+    return {"S": coherence_fused, "weights": {"Triangle": float(w[0]),
+            "Vortex": float(w[1]), "ImpulseFFT": float(w[2])},
+            "modus": modus, "dominant": dominant, "T": T, "V": V, "F": F,
+            "drift": vor["drift_direction"]}
+
+def measure_shiftwn(window):
+    tri = triangle(window)
+    vor = vortex(window)
+    imp = impulse(window)
+    fus = photonics(tri, vor, imp)
+    return {"triangle": tri, "vortex": vor, "impulse": imp, "photonics": fus}
+
+def build_window(closes):
+    """Baut ein OHLCV-Fenster aus Schlusskursen (HLC approximiert um Close)."""
+    n = min(60, len(closes))
+    seg = closes[-n:]
+    window = np.zeros((n, 5))
+    window[:, 3] = seg
+    window[:, 0] = seg * 0.997   # Open
+    window[:, 1] = seg * 1.005   # High
+    window[:, 2] = seg * 0.995   # Low
+    window[:, 4] = 1.0           # Volumen (neutral, falls nicht vorhanden)
+    return window
+
+def fibonacci_levels(closes):
+    hi, lo = np.max(closes), np.min(closes)
+    d = hi - lo
+    return {"0.0%": hi, "23.6%": hi-0.236*d, "38.2%": hi-0.382*d, "50.0%": hi-0.5*d,
+            "61.8%": hi-0.618*d, "78.6%": hi-0.786*d, "100.0%": lo}
 
 # ============================================================
-#  KI-WÄCHTER
-#  Liest NUR Felder aus dem Empfehlungstext (kein eigenes Markturteil)
-#  und hält die Behauptung gegen den gemessenen Struktur-Befund.
+#  KI-WÄCHTER: Empfehlung lesen + Kohärenz gegen ShiftWN prüfen
 # ============================================================
 
 def extrahiere_empfehlung(text):
-    """Liest Richtung/Konfidenz/Ziel/Stop aus Text. Trifft KEINE Marktaussage.
-    (Später durch einen LLM-Aufruf ersetzbar, der dasselbe Dict liefert.)"""
     out = {"richtung": "HOLD", "konfidenz": None, "ziel": None, "stop": None}
     if not text:
         return out
@@ -89,206 +166,130 @@ def extrahiere_empfehlung(text):
     tlp = re.sub(r"(?:konfidenz|confidence)\s*[:=]?\s*\d{1,3}\s*%?", " ", tl)
     num = r"(\d{1,3}(?:\.\d{3})+|\d{4,6})"
     f = lambda s: float(s.replace(".", ""))
-    z = re.search(rf"(?:ziel|target|kursziel)\s*[:=]?\s*{num}", tlp)
-    out["ziel"] = f(z.group(1)) if z else None
-    s = re.search(rf"(?:stop[- ]?loss|stop)\s*[:=]?\s*{num}", tlp)
-    out["stop"] = f(s.group(1)) if s else None
+    z = re.search(rf"(?:ziel|target|kursziel)\s*[:=]?\s*{num}", tlp); out["ziel"] = f(z.group(1)) if z else None
+    s = re.search(rf"(?:stop[- ]?loss|stop)\s*[:=]?\s*{num}", tlp); out["stop"] = f(s.group(1)) if s else None
     sell = ["sell", "short", "verkaufen", "verkauf", "bearish"]
     buy = ["buy", "long", "kaufen", "kauf", "bullish"]
-    hat_sell = any(re.search(rf"\b{re.escape(w)}\b", tl) for w in sell)
-    hat_buy = any(re.search(rf"\b{re.escape(w)}\b", tl) for w in buy)
-    if hat_sell and not hat_buy:
-        out["richtung"] = "SELL"
-    elif hat_buy and not hat_sell:
-        out["richtung"] = "BUY"
-    elif hat_buy and hat_sell:
-        out["richtung"] = "CONFLICT"
+    hs = any(re.search(rf"\b{re.escape(w)}\b", tl) for w in sell)
+    hb = any(re.search(rf"\b{re.escape(w)}\b", tl) for w in buy)
+    out["richtung"] = "SELL" if hs and not hb else "BUY" if hb and not hs else "CONFLICT" if hb and hs else "HOLD"
     return out
 
-def waechter_urteil(richtung, struktur_erkannt, tendenz, p):
-    """Hält die externe Behauptung gegen den Struktur-Befund. Prognosefrei."""
-    if richtung == "CONFLICT":
-        return "warn", "⚠️ Empfehlung mehrdeutig (Kauf- und Verkaufsbegriffe). Bitte manuell prüfen."
-    # Struktur-Richtung aus der Tendenz ableiten
-    if tendenz.startswith("Trending") or tendenz == "Momentum":
-        struktur_dir = "BUY"
-    elif tendenz == "Mean-Reversion":
-        struktur_dir = "SELL"
-    else:
-        struktur_dir = "NEUTRAL"
-
-    if not struktur_erkannt:
-        if richtung in ("BUY", "SELL"):
-            return "error", (f"❌ Unplausibel: Die Empfehlung beansprucht Richtung **{richtung}**, "
-                             f"die Reihe ist jedoch statistisch nicht vom Random Walk unterscheidbar "
-                             f"(p={p:.3f}). Die behauptete Richtung ist in den Daten nicht messbar.")
-        return "info", "Empfehlung sieht keine Richtung – Reihe ist random-walk-konsistent. Übereinstimmung."
-    # Struktur erkannt:
-    if richtung == "HOLD":
-        return "warn", f"⚠️ Empfehlung sagt HOLD – die Reihe zeigt jedoch messbare Struktur ({tendenz})."
-    if struktur_dir == "NEUTRAL":
-        return "info", f"Struktur messbar ({tendenz}), aber ohne klare Richtungszuordnung – Behauptung nicht prüfbar."
-    if richtung == struktur_dir:
-        return "success", (f"✅ Plausibel: Richtung **{richtung}** ist mit der messbaren Struktur "
-                           f"({tendenz}) vereinbar. Hinweis: statistische Vereinbarkeit, **kein** "
-                           f"Kaufsignal und keine Handelbarkeitsgarantie.")
-    return "error", (f"❌ Widerspruch: Empfehlung sagt **{richtung}**, die messbare Struktur "
-                     f"deutet jedoch auf **{struktur_dir}** ({tendenz}).")
-
 # ============================================================
-#  AUSWAHL + DATEN
+#  DATEN
 # ============================================================
 
-# Pro Markt eine Liste moeglicher Yahoo-Ticker (erster, der liefert, gewinnt).
-# DAX hat Fallbacks, weil ^GDAXI bei Yahoo gelegentlich leer antwortet.
 MAERKTE = {
-    "DAX": ["^GDAXI", "EXS1.DE", "DAX"],
-    "S&P 500": ["^GSPC"],
-    "Dow Jones": ["^DJI"],
-    "Nasdaq": ["^IXIC"],
-    "Bitcoin": ["BTC-USD"],
-    "Gold": ["GC=F"],
+    "DAX": ["^GDAXI", "EXS1.DE"], "S&P 500": ["^GSPC"], "Dow Jones": ["^DJI"],
+    "Nasdaq": ["^IXIC"], "TecDAX": ["^TECDAX"], "Bitcoin": ["BTC-USD"], "Gold": ["GC=F"],
 }
-GRANULARITAET = {
-    "Täglich (1 Jahr)": ("1y", "1d"),
-    "15-Minuten (1 Monat)": ("1mo", "15m"),
-    "5-Minuten (5 Tage)": ("5d", "5m"),
-}
+GRAN = {"Täglich (1 Jahr)": ("1y", "1d"), "15-Minuten (1 Monat)": ("1mo", "15m"),
+        "5-Minuten (5 Tage)": ("5d", "5m")}
 
 with st.sidebar:
     st.header("Einstellungen")
     markt_name = st.selectbox("Markt", list(MAERKTE.keys()))
-    gran_name = st.selectbox("Granularität", list(GRANULARITAET.keys()))
+    gran_name = st.selectbox("Granularität", list(GRAN.keys()))
     st.divider()
-    alpha = st.slider("Signifikanzniveau α", 0.01, 0.10, 0.05, 0.01)
-    n_perm = st.slider("Permutationen", 100, 800, 400, 50)
+    coherence_min = st.slider("Vortex-Kohärenz (Minimum für Signal)", 0.50, 0.95, 0.70, 0.01)
+    drift_min = st.slider("Drift (Minimum für Richtung)", 0.04, 0.30, 0.06, 0.01)
     st.divider()
     st.subheader("🛡️ KI-Wächter")
     externe_empfehlung = st.text_area("KI-Empfehlung einfügen", height=150,
-        placeholder="Empfehlung von ChatGPT, Grok etc. hier einfügen ...")
+        placeholder="Empfehlung von ChatGPT, Grok etc. ...")
     waechter_an = st.checkbox("Wächter aktivieren", value=True)
 
 ticker_liste = MAERKTE[markt_name]
-period, interval = GRANULARITAET[gran_name]
+period, interval = GRAN[gran_name]
 
 @st.cache_data(ttl=120)
 def lade_daten(ticker_liste, period, interval, versuche=3):
-    """Probiert mehrere Ticker und mehrere Versuche, bis Daten kommen.
-    Faengt die gelegentlichen leeren Yahoo-Antworten (v.a. beim DAX) ab."""
     for ticker in ticker_liste:
         for _ in range(versuche):
             try:
-                df = yf.download(ticker, period=period, interval=interval,
-                                 progress=False, auto_adjust=True)
+                df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
             except Exception:
                 df = None
             if df is not None and not df.empty:
-                kurse = df["Close"].values.flatten()
-                kurse = kurse[~np.isnan(kurse)]
-                if len(kurse) >= 30:
-                    return kurse, ticker
+                k = df["Close"].values.flatten(); k = k[~np.isnan(k)]
+                if len(k) >= 30:
+                    return k, ticker
     return None, None
 
 with st.spinner(f"Lade {markt_name}-Daten ..."):
-    kurse, verwendeter_ticker = lade_daten(tuple(ticker_liste), period, interval)
+    kurse, used = lade_daten(tuple(ticker_liste), period, interval)
 
 if kurse is None or len(kurse) < 30:
-    st.error("❌ Konnte keine ausreichenden Marktdaten laden. Anderen Markt/Granularität versuchen "
-             "(oder noch einmal denselben – Yahoo antwortet manchmal erst beim zweiten Versuch).")
+    st.error("❌ Konnte keine Marktdaten laden. Anderen Markt/Granularität versuchen (oder erneut).")
     st.stop()
 
-if verwendeter_ticker and verwendeter_ticker not in ("^GDAXI","^GSPC","^DJI","^IXIC","BTC-USD","GC=F"):
-    st.caption(f"Hinweis: Daten über Ersatz-Ticker `{verwendeter_ticker}` geladen.")
-
-segment = kurse[-min(len(kurse), 500):]
+closes = kurse[-min(len(kurse), 200):]
 aktueller_preis = float(kurse[-1])
 
 # ============================================================
-#  ANALYSE
+#  SHIFTWN-MESSUNG
 # ============================================================
+window = build_window(closes)
+r = measure_shiftwn(window)
+ph = r["photonics"]
+coherence = ph["S"]
+drift = ph["drift"]
 
-with st.spinner("Analysiere Marktstruktur ..."):
-    vr, p_vr, dist_vr = permutationstest(segment, varianz_ratio, 1.0, n_perm)
-    rz, p_rz, _        = permutationstest(segment, runs_z, 0.0, n_perm)
-    ac, p_ac, _        = permutationstest(segment, acf_lag1, 0.0, n_perm)
-
-min_p = min(p_vr, p_rz, p_ac)
-struktur_erkannt = min_p < alpha
-
-if struktur_erkannt:
-    if vr > 1.0 and p_vr < alpha:
-        tendenz = "Trending / Momentum"
-    elif (vr < 1.0 and p_vr < alpha) or (ac < 0 and p_ac < alpha):
-        tendenz = "Mean-Reversion"
-    elif ac > 0 and p_ac < alpha:
-        tendenz = "Momentum"
-    else:
-        tendenz = "Struktur (Art unklar)"
-    befund_icon, befund_text = "🟢", "STRUKTUR ERKANNT"
+# Signal aus ShiftWN-Geometrie (Korrektiv-Logik)
+if coherence > coherence_min and drift > drift_min:
+    signal, sig_icon = "STRUKTUR ↑ (BUY-kohärent)", "🟢"; struktur_dir = "BUY"
+elif coherence > coherence_min and drift < -drift_min:
+    signal, sig_icon = "STRUKTUR ↓ (SELL-kohärent)", "🔴"; struktur_dir = "SELL"
 else:
-    tendenz = "—"
-    befund_icon, befund_text = "🟠", "RANDOM-WALK-KONSISTENT"
+    signal, sig_icon = "KEINE KOHÄRENTE STRUKTUR", "🟠"; struktur_dir = "NEUTRAL"
 
-# ============================================================
-#  ANZEIGE
-# ============================================================
-
-st.caption(f"Analyse {markt_name} · {gran_name}")
+st.caption(f"ShiftWN-Analyse {markt_name} · {gran_name} · {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
+if used and used not in ("^GDAXI","^GSPC","^DJI","^IXIC","^TECDAX","BTC-USD","GC=F"):
+    st.caption(f"Hinweis: Daten über Ersatz-Ticker `{used}` geladen.")
 
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("Befund", befund_icon); k1.caption(befund_text)
+k1.metric("Marktmodus", ph["modus"]); k1.caption(f"dominant: {ph['dominant']}")
 k2.metric("Aktueller Preis", f"{aktueller_preis:,.2f}")
-k3.metric("kleinster p-Wert", f"{min_p:.3f}"); k3.caption(f"α = {alpha}")
-k4.metric("Tendenz", tendenz)
+k3.metric("Photonics-Kohärenz S", f"{coherence:.3f}")
+k4.metric("Drift", f"{drift:+.3f}")
 
-# Teststatistiken
-st.markdown("#### Teststatistiken")
-t1, t2, t3 = st.columns(3)
-for spalte, name, wert, p in [
-    (t1, "Varianz-Ratio VR(5)", vr, p_vr),
-    (t2, "Runs-Test (z)", rz, p_rz),
-    (t3, "ACF Lag-1", ac, p_ac),
-]:
-    sig = "✓ signifikant" if p < alpha else "nicht signifikant"
-    spalte.metric(name, f"{wert:.3f}", f"p={p:.3f} · {sig}")
+# Operator-Scores + adaptive Gewichte
+st.markdown("#### Operatoren & Photonics-Gewichtung")
+o1, o2, o3 = st.columns(3)
+o1.metric("Triangle (T)", f"{ph['T']:.3f}", f"Gewicht {ph['weights']['Triangle']:.2f}")
+o2.metric("Vortex (V)", f"{ph['V']:.3f}", f"Gewicht {ph['weights']['Vortex']:.2f}")
+o3.metric("Impulse FFT (F)", f"{ph['F']:.3f}", f"Gewicht {ph['weights']['ImpulseFFT']:.2f}")
 
-# Zweispaltig: Preisverlauf | Permutationsverteilung
 links, rechts = st.columns(2)
-
 with links:
-    st.markdown(f"#### Preisverlauf {markt_name}")
+    st.markdown(f"#### Preisverlauf {markt_name} mit Fibonacci")
     fig = go.Figure()
-    fig.add_trace(go.Scatter(y=segment, mode="lines",
-                  line=dict(color="#00ff88", width=2), name=markt_name))
-    fig.update_layout(height=400, template="plotly_dark",
-                      margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
+    fig.add_trace(go.Scatter(y=closes, mode="lines", line=dict(color="#00ff88", width=2), name=markt_name))
+    for nm, pr in fibonacci_levels(closes).items():
+        fig.add_hline(y=pr, line_dash="dash", line_color="rgba(255,255,0,0.35)", annotation_text=nm)
+    fig.update_layout(height=420, template="plotly_dark", margin=dict(l=0,r=0,t=10,b=0), showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
-
 with rechts:
-    st.markdown("#### Permutationstest: Beobachtung vs. Zufall")
-    fig2 = go.Figure()
-    fig2.add_trace(go.Histogram(x=dist_vr, nbinsx=40,
-                   marker_color="rgba(120,120,160,0.6)", name="Surrogate (geshuffelt)"))
-    fig2.add_vline(x=vr, line_color="#00ff88", line_width=3,
-                   annotation_text=f"beobachtet VR={vr:.2f}", annotation_position="top")
-    fig2.add_vline(x=1.0, line_dash="dot", line_color="orange",
-                   annotation_text="RW-Erwartung")
-    fig2.update_layout(height=400, template="plotly_dark",
-                       margin=dict(l=0, r=0, t=10, b=0), showlegend=False,
-                       xaxis_title="VR(5) der permutierten Reihen")
+    st.markdown("#### Photonics-Fusion (adaptive Gewichte)")
+    fig2 = go.Figure(go.Bar(
+        x=[ph["weights"]["Triangle"], ph["weights"]["Vortex"], ph["weights"]["ImpulseFFT"]],
+        y=["Triangle", "Vortex", "Impulse FFT"], orientation="h",
+        marker_color=["#00ff88", "#00b3ff", "#ff9500"]))
+    fig2.update_layout(height=420, template="plotly_dark", margin=dict(l=0,r=0,t=10,b=0),
+                       xaxis_title="adaptives Gewicht w_i", xaxis_range=[0,1])
     st.plotly_chart(fig2, use_container_width=True)
 
-st.caption("Liegt der grüne Strich klar außerhalb der grauen Verteilung, weicht die Reihe vom "
-           "Random Walk ab. Liegt er mittendrin: Rauschen. · "
-           f"{len(segment)} Datenpunkte · Statistische Signifikanz ≠ Handelbarkeit. Keine Anlageberatung.")
+st.markdown(f"### {sig_icon} ShiftWN-Befund: {signal}")
+st.caption("ShiftWN misst die Marktgeometrie über vier patentierte Operatoren (Triangle, Vortex, "
+           "Impulse FFT) und fusioniert sie adaptiv über Photonics. Geometrisches Korrektiv, keine "
+           "Prognose und keine Anlageberatung.")
 
 # ============================================================
-#  WÄCHTER-AUSWERTUNG
+#  WÄCHTER-URTEIL
 # ============================================================
 if externe_empfehlung and waechter_an:
     emp = extrahiere_empfehlung(externe_empfehlung)
     richtung = emp["richtung"]
-
     st.markdown("---")
     st.subheader("🛡️ Wächter-Urteil")
     wa, wb = st.columns(2)
@@ -296,14 +297,29 @@ if externe_empfehlung and waechter_an:
         st.write("**Externe KI sagt (extrahiert):**")
         st.info(externe_empfehlung)
         konf = f" · Konfidenz {emp['konfidenz']} %" if emp["konfidenz"] is not None else ""
-        st.caption(f"Erkannte Richtung: **{richtung}**{konf} · Ziel {emp['ziel']} · Stop {emp['stop']}")
+        st.caption(f"Richtung: **{richtung}**{konf} · Ziel {emp['ziel']} · Stop {emp['stop']}")
     with wb:
-        st.write("**ShiftWN misst (Struktur):**")
-        st.success(f"{befund_icon} {befund_text} · p={min_p:.3f} · Tendenz: {tendenz}")
+        st.write("**ShiftWN misst (Geometrie):**")
+        st.success(f"{sig_icon} {ph['modus']} · Kohärenz {coherence:.3f} · dominant {ph['dominant']}")
 
-    status, urteil = waechter_urteil(richtung, struktur_erkannt, tendenz, min_p)
-    {"success": st.success, "error": st.error,
-     "warn": st.warning, "info": st.info}[status](urteil)
+    if richtung == "CONFLICT":
+        st.warning("⚠️ Empfehlung mehrdeutig (Kauf- und Verkaufsbegriffe). Bitte manuell prüfen.")
+    elif struktur_dir == "NEUTRAL":
+        if richtung in ("BUY", "SELL"):
+            st.error(f"❌ ShiftWN widerspricht: Empfehlung sagt **{richtung}**, die Marktgeometrie zeigt "
+                     f"jedoch keine kohärente Struktur (Kohärenz {coherence:.3f} < {coherence_min}). "
+                     f"Die behauptete Richtung ist geometrisch nicht gedeckt.")
+        else:
+            st.info("Beide Seiten sehen keine kohärente Struktur. Übereinstimmung.")
+    elif richtung == struktur_dir:
+        st.success(f"✅ ShiftWN bestätigt: Richtung **{richtung}** ist mit der Marktgeometrie kohärent "
+                   f"(Modus {ph['modus']}, Kohärenz {coherence:.3f}). Hinweis: geometrische Kohärenz, "
+                   f"kein Kaufsignal und keine Handelbarkeitsgarantie.")
+    elif richtung == "HOLD":
+        st.warning(f"⚠️ Empfehlung sagt HOLD – ShiftWN sieht jedoch kohärente Struktur Richtung {struktur_dir}.")
+    else:
+        st.error(f"❌ ShiftWN widerspricht: Empfehlung sagt **{richtung}**, die Marktgeometrie tendiert "
+                 f"jedoch **{struktur_dir}** (Modus {ph['modus']}).")
 
-st.caption("ShiftWN Markt-Wächter · Misst Abweichung vom Random Walk (Lo-MacKinlay VR, Runs, ACF) "
-           "mit Permutationstest. Prognosefrei, deterministisch, auditierbar. Keine Anlageberatung.")
+st.caption("ShiftWN AI · Patentierter geometrischer Kern (Triangle · Vortex · Impulse FFT · Photonics). "
+           "Geometrisches Korrektiv über bestehender Trading-Intelligenz. Keine Anlageberatung.")
