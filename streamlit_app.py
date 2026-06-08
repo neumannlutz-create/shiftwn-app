@@ -2,8 +2,6 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 import yfinance as yf
-import smtplib
-from email.mime.text import MIMEText
 from datetime import datetime
 import time
 
@@ -19,9 +17,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | v3.9 – Haltedauer + Tage-Historie + Auto-Analyse")
+st.caption("Patent EPO SPECEPO-1/2 | v4.0 – Haltedauer klar sichtbar")
 
-# ==================== Kern-Funktionen (unverändert) ====================
+# ==================== Kern-Funktionen ====================
 def _normalize(window):
     c = window[:, 3]
     ref = np.median(c) if np.median(c) > 0 else 1.0
@@ -121,8 +119,6 @@ def get_data(ticker):
         return np.array(prices)
 
 closes_full = get_data(ticker)
-
-# ==================== Sidebar ====================
 days = st.sidebar.slider("Tage Historie", 30, 365, 180)
 closes = closes_full[-days:] if len(closes_full) > days else closes_full
 
@@ -133,19 +129,14 @@ st.sidebar.subheader("KI-Wächter Modus")
 external_message = st.sidebar.text_area("Hier KI-Empfehlung einfügen", height=120, placeholder="Kopiere hier die Empfehlung von ChatGPT, Grok etc. hinein...")
 ki_control = st.sidebar.checkbox("ShiftWN als KI-Wächter aktivieren", value=True)
 
-st.sidebar.subheader("Email-Alerts")
-provider = st.sidebar.selectbox("Email-Anbieter", ["Gmail", "iCloud / Mac (@me.com / @mac.com)"])
-email = st.sidebar.text_input("Deine Email-Adresse", "")
-email_password = st.sidebar.text_input("App-Passwort", type="password")
-
 st.sidebar.subheader("Alarm-Grenzwerte")
 vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.60, 1.0, 0.70, 0.01)
 drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.04, 0.30, 0.06, 0.01)
 confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 55, 95, 62, 1)
 
-# ==================== AUTOMATISCHE ANALYSE ====================
+# ==================== ANALYSE ====================
 if len(closes) == 0:
-    st.error("❌ Keine Marktdaten verfügbar. Bitte 30 Sekunden warten und neu laden.")
+    st.error("❌ Keine Marktdaten verfügbar.")
     st.stop()
 
 analysis_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
@@ -162,33 +153,33 @@ window[:, 4] = 15000
 readings = measure_shiftwn(window)
 vortex_score = readings["vortex"]["coherence"]
 drift = readings["vortex"]["drift_direction"]
-impulse_score = readings["impulse"]["dominant_power_ratio"]
 
-fib_levels = fibonacci_levels(closes[-200:])
-
-# Haltedauer
-if vortex_score > vortex_threshold and drift > drift_threshold and (readings["vortex"]["coherence"] * 1.6) > confidence_threshold / 100:
+if vortex_score > vortex_threshold and drift > drift_threshold:
     signal = "HEDGE_BUY"
     color = "🟢"
-    haltez = "3–8 Tage"
-elif vortex_score > vortex_threshold and drift < -drift_threshold and (readings["vortex"]["coherence"] * 1.6) > confidence_threshold / 100:
+    haltez = "3–8 Tage halten, dann verkaufen"
+elif vortex_score > vortex_threshold and drift < -drift_threshold:
     signal = "HEDGE_SELL"
     color = "🔴"
-    haltez = "2–6 Tage"
+    haltez = "2–6 Tage halten, dann verkaufen"
 else:
     signal = "HOLD"
     color = "🟠"
-    haltez = "—"
+    haltez = "Abwarten – kein klares Signal"
 
 st.subheader(f"Analyse um {analysis_time}")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("**Signal**", f"{color} {signal}", f"Konfidenz {(readings['vortex']['coherence']*1.6):.1%}")
+
+col1, col2, col3 = st.columns(3)
+col1.metric("**Signal**", f"{color} {signal}")
 col2.metric("Aktueller Preis", f"{current_price:.2f}")
 col3.metric("Vortex Coherence", f"{vortex_score:.3f}")
-col4.metric("Empfohlene Haltedauer", haltez)
+
+# === GROßE HALTE-DAUER ANZEIGE ===
+st.info(f"**📅 Empfohlene Haltedauer:** {haltez}")
 
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=list(range(len(closes[-200:]))), y=closes[-200:], mode='lines', name=market_name, line=dict(color='#00ff88', width=3)))
+fib_levels = fibonacci_levels(closes[-200:])
 for name, price in fib_levels.items():
     fig.add_hline(y=price, line_dash="dash", line_color="yellow", annotation_text=name)
 fig.update_layout(height=550, template="plotly_dark", title=f"Preisverlauf {market_name} mit Fibonacci")
@@ -205,4 +196,4 @@ if dauer_refresh:
     time.sleep(1)
     st.rerun()
 
-st.caption("ShiftWN AI v3.9 – Haltedauer + Tage-Historie wieder aktiv")
+st.caption("ShiftWN AI v4.0 – Haltedauer klar sichtbar")
