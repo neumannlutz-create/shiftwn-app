@@ -143,9 +143,16 @@ confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 60, 95, 65,
 # ==================== ANALYSE ====================
 if st.button("⚡ Manuelle Analyse starten", type="primary", use_container_width=True) or dauer_refresh:
     with st.spinner("ShiftWN analysiert..."):
+        
+        # NEUE SICHERHEITSPRÜFUNG
+        if len(closes) == 0:
+            st.error("❌ Keine Marktdaten von Yahoo Finance verfügbar (Rate-Limit). Bitte 30–60 Sekunden warten und erneut starten.")
+            st.stop()
+
         analysis_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
         current_price = float(closes[-1])
 
+        # Rest bleibt gleich wie bisher
         window_size = min(50, len(closes))
         window = np.zeros((window_size, 5))
         window[:, 3] = closes[-window_size:]
@@ -200,10 +207,3 @@ if st.button("⚡ Manuelle Analyse starten", type="primary", use_container_width
             st.info(external_message)
 
         st.success(f"Aktualisiert um {datetime.now().strftime('%H:%M:%S')}")
-
-if dauer_refresh:
-    st.info("🔄 Dauer-Auto-Refresh aktiv – aktualisiert alle 60 Sekunden")
-    time.sleep(1)
-    st.rerun()
-
-st.caption("ShiftWN AI v3.7 – vollständig korrigiert")
