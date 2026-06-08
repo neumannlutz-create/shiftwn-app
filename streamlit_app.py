@@ -12,7 +12,7 @@ import yfinance as yf
 
 st.set_page_config(page_title="ShiftWN Wächter", page_icon="⚡", layout="wide")
 st.title("⚡ ShiftWN Markt-Wächter")
-st.caption("Neuaufbau · Schritt 4: Permutationsverteilung")
+st.caption("Neuaufbau · Schritt 4: Permutationsverteilung (robustes DAX-Laden)")
 
 # ============================================================
 #  ANALYSE-ENGINE
@@ -74,9 +74,15 @@ def permutationstest(kurse, metrik, basiswert, n_perm=400, seed=0):
 #  AUSWAHL + DATEN
 # ============================================================
 
+# Pro Markt eine Liste moeglicher Yahoo-Ticker (erster, der liefert, gewinnt).
+# DAX hat Fallbacks, weil ^GDAXI bei Yahoo gelegentlich leer antwortet.
 MAERKTE = {
-    "DAX": "^GDAXI", "S&P 500": "^GSPC", "Dow Jones": "^DJI",
-    "Nasdaq": "^IXIC", "Bitcoin": "BTC-USD", "Gold": "GC=F",
+    "DAX": ["^GDAXI", "EXS1.DE", "DAX"],
+    "S&P 500": ["^GSPC"],
+    "Dow Jones": ["^DJI"],
+    "Nasdaq": ["^IXIC"],
+    "Bitcoin": ["BTC-USD"],
+    "Gold": ["GC=F"],
 }
 GRANULARITAET = {
     "Täglich (1 Jahr)": ("1y", "1d"),
@@ -92,25 +98,37 @@ with st.sidebar:
     alpha = st.slider("Signifikanzniveau α", 0.01, 0.10, 0.05, 0.01)
     n_perm = st.slider("Permutationen", 100, 800, 400, 50)
 
-ticker = MAERKTE[markt_name]
+ticker_liste = MAERKTE[markt_name]
 period, interval = GRANULARITAET[gran_name]
 
 @st.cache_data(ttl=120)
-def lade_daten(ticker, period, interval):
-    df = yf.download(ticker, period=period, interval=interval,
-                     progress=False, auto_adjust=True)
-    if df is None or df.empty:
-        return None
-    kurse = df["Close"].values.flatten()
-    return kurse[~np.isnan(kurse)]
+def lade_daten(ticker_liste, period, interval, versuche=3):
+    """Probiert mehrere Ticker und mehrere Versuche, bis Daten kommen.
+    Faengt die gelegentlichen leeren Yahoo-Antworten (v.a. beim DAX) ab."""
+    for ticker in ticker_liste:
+        for _ in range(versuche):
+            try:
+                df = yf.download(ticker, period=period, interval=interval,
+                                 progress=False, auto_adjust=True)
+            except Exception:
+                df = None
+            if df is not None and not df.empty:
+                kurse = df["Close"].values.flatten()
+                kurse = kurse[~np.isnan(kurse)]
+                if len(kurse) >= 30:
+                    return kurse, ticker
+    return None, None
 
 with st.spinner(f"Lade {markt_name}-Daten ..."):
-    kurse = lade_daten(ticker, period, interval)
+    kurse, verwendeter_ticker = lade_daten(tuple(ticker_liste), period, interval)
 
 if kurse is None or len(kurse) < 30:
     st.error("❌ Konnte keine ausreichenden Marktdaten laden. Anderen Markt/Granularität versuchen "
              "(oder noch einmal denselben – Yahoo antwortet manchmal erst beim zweiten Versuch).")
     st.stop()
+
+if verwendeter_ticker and verwendeter_ticker not in ("^GDAXI","^GSPC","^DJI","^IXIC","BTC-USD","GC=F"):
+    st.caption(f"Hinweis: Daten über Ersatz-Ticker `{verwendeter_ticker}` geladen.")
 
 segment = kurse[-min(len(kurse), 500):]
 aktueller_preis = float(kurse[-1])
