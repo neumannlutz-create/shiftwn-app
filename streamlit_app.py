@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("⚡ ShiftWN AI – Geometrische Marktanalyse")
-st.caption("Patent EPO SPECEPO-1/2 | v4.3 – KI-Wächter final fix")
+st.caption("Patent EPO SPECEPO-1/2 | v4.4 – KI-Wächter Parser-Fix")
 
 # ==================== Kern-Funktionen (unverändert) ====================
 def _normalize(window):
@@ -137,28 +137,79 @@ vortex_threshold = st.sidebar.slider("Vortex Coherence (Minimum)", 0.60, 1.0, 0.
 drift_threshold = st.sidebar.slider("Drift (Minimum für Signal)", 0.04, 0.30, 0.06, 0.01)
 confidence_threshold = st.sidebar.slider("Konfidenz (Minimum in %)", 55, 95, 62, 1)
 
-# ==================== VERBESSERTER KI-WÄCHTER PARSER ====================
+# ==================== KI-WÄCHTER PARSER (v4.4 – Fix) ====================
+def detect_direction(text_lower):
+    """
+    Erkennt Handelsrichtung aus dem externen Empfehlungstext.
+
+    Fix ggü. v4.3: Verwendet Wortgrenzen (\\b), damit das Substring-Problem
+    "kaufen" in "verkaufen" nicht mehr fälschlich BUY auslöst. SELL und BUY
+    werden symmetrisch geprüft; sind beide Begriffe vorhanden, ist die
+    Empfehlung mehrdeutig -> CONFLICT statt willkürlicher Wahl.
+    """
+    sell_words = ["sell", "short", "verkaufen", "verkauf", "bearish"]
+    buy_words = ["buy", "long", "kaufen", "kauf", "bullish"]
+
+    has_sell = any(re.search(rf'\b{re.escape(w)}\b', text_lower) for w in sell_words)
+    has_buy = any(re.search(rf'\b{re.escape(w)}\b', text_lower) for w in buy_words)
+
+    if has_sell and not has_buy:
+        return "SELL"
+    if has_buy and not has_sell:
+        return "BUY"
+    if has_buy and has_sell:
+        return "CONFLICT"
+    return "HOLD"
+
+
+def parse_confidence(text_lower):
+    """Liest 'Konfidenz: 72 %' o.ä. aus. Wird separat geparst, damit die
+    Konfidenzzahl nicht versehentlich als Preis interpretiert wird."""
+    m = re.search(r'(?:konfidenz|confidence)\s*[:=]?\s*(\d{1,3})\s*%?', text_lower)
+    return int(m.group(1)) if m else None
+
+
+def _to_float(num_str):
+    """'24.100' -> 24100.0 (deutsche Tausenderpunkte entfernen)."""
+    return float(num_str.replace('.', ''))
+
+
 def parse_ki_recommendation(text):
     if not text:
-        return {"direction": "HOLD", "current": None, "target": None, "stop_loss": None}
+        return {"direction": "HOLD", "confidence": None,
+                "current": None, "target": None, "stop_loss": None}
+
     text_lower = text.lower()
-    
-    # Current Price
-    current_match = re.search(r'preis\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower) or re.search(r'(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
-    current = float(current_match.group(1).replace('.', '')) if current_match else None
-    
-    # Ziel / Target
-    target_match = re.search(r'(ziel|target)\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
-    target = float(target_match.group(2).replace('.', '')) if target_match else None
-    
-    # Stop-Loss
-    stop_match = re.search(r'(stop[- ]?loss|stop)\s*(\d{1,3}(?:\.\d{3})*|\d{4,6})', text_lower)
-    stop_loss = float(stop_match.group(2).replace('.', '')) if stop_match else None
-    
-    direction = "BUY" if any(w in text_lower for w in ["buy", "long", "kaufen", "strong buy"]) else \
-                "SELL" if any(w in text_lower for w in ["sell", "short", "verkaufen", "bearish"]) else "HOLD"
-    
-    return {"direction": direction, "current": current, "target": target, "stop_loss": stop_loss}
+    confidence = parse_confidence(text_lower)
+
+    # Konfidenz-Passage aus dem Text entfernen, damit ihre Zahl (z.B. 72)
+    # nicht in die Preis-Suche fällt.
+    text_for_prices = re.sub(r'(?:konfidenz|confidence)\s*[:=]?\s*\d{1,3}\s*%?', ' ', text_lower)
+
+    num = r'(\d{1,3}(?:\.\d{3})+|\d{4,6})'  # 4-6-stellige Zahl oder mit Tausenderpunkt
+
+    target_match = re.search(rf'(?:ziel|target|kursziel)\s*[:=]?\s*{num}', text_for_prices)
+    target = _to_float(target_match.group(1)) if target_match else None
+
+    stop_match = re.search(rf'(?:stop[- ]?loss|stop)\s*[:=]?\s*{num}', text_for_prices)
+    stop_loss = _to_float(stop_match.group(1)) if stop_match else None
+
+    current_match = re.search(rf'(?:preis|price|kurs)\s*[:=]?\s*{num}', text_for_prices)
+    current = _to_float(current_match.group(1)) if current_match else None
+
+    return {"direction": detect_direction(text_lower), "confidence": confidence,
+            "current": current, "target": target, "stop_loss": stop_loss}
+
+
+def normalize_signal(sig):
+    """Bildet die ShiftWN-Labels auf den gemeinsamen Richtungsraum ab,
+    damit der Vergleich mit der externen Richtung (BUY/SELL/HOLD) fair ist.
+    HEDGE_BUY -> BUY, HEDGE_SELL -> SELL, HOLD -> HOLD."""
+    if sig in ("HEDGE_BUY", "BUY"):
+        return "BUY"
+    if sig in ("HEDGE_SELL", "SELL"):
+        return "SELL"
+    return "HOLD"
 
 # ==================== ANALYSE ====================
 if len(closes) == 0:
@@ -209,10 +260,12 @@ for name, price in fibonacci_levels(closes[-200:]).items():
 fig.update_layout(height=550, template="plotly_dark", title=f"Preisverlauf {market_name} mit Fibonacci")
 st.plotly_chart(fig, use_container_width=True)
 
-# ==================== FINALER KI-WÄCHTER ====================
+# ==================== KI-WÄCHTER AUSWERTUNG (v4.4) ====================
 if external_message and ki_control:
     ki_data = parse_ki_recommendation(external_message)
-    
+    ext_dir = ki_data["direction"]
+    shiftwn_dir = normalize_signal(signal)
+
     st.subheader("🛡️ KI-Wächter Auswertung")
     col_a, col_b = st.columns(2)
     with col_a:
@@ -221,13 +274,24 @@ if external_message and ki_control:
     with col_b:
         st.write("**ShiftWN sagt:**")
         st.success(f"{color} {signal} | {haltez}")
-    
-    if ki_data["direction"] == signal and signal != "HOLD":
-        st.success("✅ ShiftWN bestätigt die externe Empfehlung vollständig.")
-    elif ki_data["direction"] != signal and signal != "HOLD":
-        st.error(f"❌ ShiftWN widerspricht! Externe KI sagt **{ki_data['direction']}**, ShiftWN sagt **{signal}**.")
-    elif ki_data["direction"] == "HOLD" and signal != "HOLD":
-        st.warning("⚠️ Externe KI sagt HOLD – ShiftWN sieht jedoch ein klares Signal.")
+
+    # Erkannte Richtung der externen KI transparent anzeigen
+    conf_txt = f" (Konfidenz {ki_data['confidence']} %)" if ki_data["confidence"] is not None else ""
+    st.caption(f"Erkannte externe Richtung: **{ext_dir}**{conf_txt}  |  ShiftWN-Richtung: **{shiftwn_dir}**")
+
+    # Vergleich auf gemeinsamem Richtungsraum
+    if ext_dir == "CONFLICT":
+        st.warning("⚠️ Externe Empfehlung ist mehrdeutig (enthält Kauf- und Verkaufssignale) – bitte manuell prüfen.")
+    elif ext_dir == "HOLD" and shiftwn_dir != "HOLD":
+        st.warning(f"⚠️ Externe KI sagt HOLD – ShiftWN sieht jedoch ein klares Signal (**{signal}**).")
+    elif shiftwn_dir == "HOLD" and ext_dir != "HOLD":
+        st.warning(f"⚠️ Externe KI sagt **{ext_dir}** – ShiftWN sieht kein klares Signal (HOLD).")
+    elif ext_dir == shiftwn_dir and shiftwn_dir != "HOLD":
+        st.success(f"✅ ShiftWN bestätigt die externe Empfehlung (**{ext_dir}**).")
+    elif ext_dir != shiftwn_dir and ext_dir != "HOLD" and shiftwn_dir != "HOLD":
+        st.error(f"❌ ShiftWN widerspricht! Externe KI sagt **{ext_dir}**, ShiftWN sagt **{signal}** ({shiftwn_dir}).")
+    else:
+        st.info("Beide Seiten sehen aktuell kein klares Signal (HOLD).")
 
 st.success(f"Automatisch aktualisiert um {datetime.now().strftime('%H:%M:%S')}")
 
@@ -236,4 +300,4 @@ if dauer_refresh:
     time.sleep(1)
     st.rerun()
 
-st.caption("ShiftWN AI v4.3 – KI-Wächter final fix")
+st.caption("ShiftWN AI v4.4 – KI-Wächter Parser-Fix")
