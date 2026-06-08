@@ -1,7 +1,7 @@
 """
 ShiftWN AI – Geometrische Marktanalyse mit adaptivem Photonics-Kern
 Struktur: 1) Markt-Radar  2) Detailanalyse  3) KI-Wächter
-Look: Anthrazit/Graphit + Teal (technisch-premium).
+Look: gedämpft warmes Hellgrau + Petrol (hell, edel, ruhig).
 Alerts: visuell in der App (neues Signal / Schock werden hervorgehoben).
         E-Mail-Zustellung = dokumentierter nächster Schritt (separater Dienst,
         erst nach rechtlicher Klärung – siehe Hinweis unten im Code).
@@ -19,30 +19,31 @@ from datetime import datetime
 
 st.set_page_config(page_title="ShiftWN AI", layout="wide", page_icon="⚡")
 
-# ---------------- Farbpalette: Anthrazit/Graphit + Teal ----------------
-BG="#11151c"; BG_ALT="#161b24"; CARD="#1a212c"; BORDER="#2a323f"
-TEAL="#2dd4bf"; TEXT="#e4e8ee"; MUTED="#8b96a5"; FAINT="#5b6675"
-BUY="#2dd4bf"; SELL="#f0786b"; HOLD="#8b96a5"; SHOCK="#e0a356"
+# ---------------- Farbpalette: gedämpft warmes Hellgrau + Petrol ----------------
+BG="#e9e7e2"; BG_ALT="#e3e1db"; CARD="#f1efea"; BORDER="#cfccc4"
+TEAL="#1f6f6b"; TEXT="#2b2f36"; MUTED="#6b6f78"; FAINT="#969aa2"
+BUY="#1f6f6b"; SELL="#b5524a"; HOLD="#8a8077"; SHOCK="#b07a2e"
 
 st.markdown(f"""
 <style>
     .stApp {{background:{BG};color:{TEXT};}}
     section[data-testid="stSidebar"]{{background:{BG_ALT};border-right:1px solid {BORDER};}}
-    h1{{color:{TEXT};font-weight:700;letter-spacing:-.5px;margin-bottom:0;}}
-    h1 + div, .app-sub {{color:{MUTED};}}
-    h2{{color:{TEXT};font-weight:600;font-size:1.15rem;text-transform:uppercase;
-        letter-spacing:1.5px;border-bottom:1px solid {BORDER};padding-bottom:8px;margin-top:14px;}}
+    h1{{color:{TEXT};font-weight:700;letter-spacing:-.3px;margin-bottom:0;}}
+    .app-sub {{color:{MUTED};}}
+    h2{{color:{MUTED};font-weight:600;font-size:.95rem;text-transform:uppercase;
+        letter-spacing:2px;border-bottom:1px solid {BORDER};padding-bottom:8px;margin-top:18px;}}
     h2 .num{{color:{TEAL};font-weight:700;margin-right:8px;}}
     h3{{color:{TEXT};font-weight:600;}}
-    .stMetric{{background:{CARD};border:1px solid {BORDER};border-radius:14px;padding:16px 18px;}}
-    [data-testid="stMetricValue"]{{color:{TEAL};font-size:1.35rem;font-weight:600;}}
-    [data-testid="stMetricLabel"]{{color:{MUTED};font-size:.8rem;text-transform:uppercase;letter-spacing:.5px;}}
-    .stButton>button{{background:{TEAL};color:#06231f;font-weight:700;border:none;border-radius:8px;}}
+    .stMetric{{background:{CARD};border:1px solid {BORDER};border-radius:14px;padding:16px 18px;
+               box-shadow:0 1px 3px rgba(43,47,54,.06);}}
+    [data-testid="stMetricValue"]{{color:{TEAL};font-size:1.35rem;font-weight:700;}}
+    [data-testid="stMetricLabel"]{{color:{MUTED};font-size:.78rem;text-transform:uppercase;letter-spacing:.6px;}}
+    .stButton>button{{background:{TEAL};color:#f4f3ef;font-weight:600;border:none;border-radius:8px;}}
     div[data-testid="stMarkdownContainer"] code{{color:{TEAL};}}
     .block-container{{padding-top:2.4rem;max-width:1400px;}}
     .radar{{background:{CARD};border:1px solid {BORDER};border-radius:14px;padding:14px 16px;
-            margin-bottom:8px;transition:border-color .2s;}}
-    .radar:hover{{border-color:{TEAL};}}
+            margin-bottom:8px;box-shadow:0 1px 3px rgba(43,47,54,.05);transition:box-shadow .2s,transform .2s;}}
+    .radar:hover{{box-shadow:0 4px 14px rgba(43,47,54,.12);transform:translateY(-1px);}}
     .radar .nm{{color:{TEXT};font-size:1.04rem;font-weight:600;}}
     .radar .px{{color:{MUTED};font-size:.82rem;}}
     .radar .md{{color:{FAINT};font-size:.72rem;letter-spacing:.3px;}}
@@ -260,18 +261,18 @@ else:
         fig=go.Figure()
         fig.add_trace(go.Scatter(y=closes,mode="lines",line=dict(color=TEAL,width=2.2)))
         for nmf,pr in fibonacci_levels(closes).items():
-            fig.add_hline(y=pr,line_dash="dot",line_color="rgba(139,150,165,.28)",
-                          annotation_text=nmf,annotation_font_color="rgba(139,150,165,.7)",annotation_font_size=10)
-        fig.update_layout(height=420,template="plotly_dark",paper_bgcolor=BG,plot_bgcolor=BG,
+            fig.add_hline(y=pr,line_dash="dot",line_color="rgba(107,111,120,.30)",
+                          annotation_text=nmf,annotation_font_color="rgba(107,111,120,.75)",annotation_font_size=10)
+        fig.update_layout(height=420,template="plotly_white",paper_bgcolor=BG,plot_bgcolor=CARD,
                           margin=dict(l=0,r=0,t=8,b=0),showlegend=False,
                           xaxis=dict(gridcolor=BORDER),yaxis=dict(gridcolor=BORDER))
         st.plotly_chart(fig,use_container_width=True)
     with right:
         st.markdown("**Photonics — Gewichtung nach Aussagekraft**")
         fig2=go.Figure(go.Bar(x=[ph["w"][0],ph["w"][1],ph["w"][2]],y=["Triangle","Vortex","Impulse FFT"],
-            orientation="h",marker_color=[TEAL,"#4a9fd4","#d49a5a"],
+            orientation="h",marker_color=[TEAL,"#3f7d9c","#b07a2e"],
             text=[f"{ph['w'][0]:.0%}",f"{ph['w'][1]:.0%}",f"{ph['w'][2]:.0%}"],textposition="auto"))
-        fig2.update_layout(height=180,template="plotly_dark",paper_bgcolor=BG,plot_bgcolor=BG,
+        fig2.update_layout(height=180,template="plotly_white",paper_bgcolor=BG,plot_bgcolor=CARD,
                            margin=dict(l=0,r=10,t=4,b=20),xaxis_range=[0,1],
                            xaxis=dict(gridcolor=BORDER),yaxis=dict(gridcolor=BORDER))
         st.plotly_chart(fig2,use_container_width=True)
