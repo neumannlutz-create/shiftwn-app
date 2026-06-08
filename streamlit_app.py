@@ -1,8 +1,8 @@
 """
 ShiftWN Markt-Wächter – Neuaufbau
-Schritt 3: Random-Walk-Analyse (Varianz-Ratio, Runs, ACF) + Permutationstest.
-Zeigt erstmals einen Befund (random-walk-konsistent / Struktur erkannt) + p-Wert.
-Noch ohne Verteilungs-Grafik und ohne Wächter (kommen in Schritt 4 und 5).
+Schritt 4: Permutationsverteilung als Grafik, zweispaltiges Layout.
+Links Preisverlauf, rechts die Surrogat-Verteilung mit beobachtetem Wert.
+Noch ohne Wächter (kommt in Schritt 5).
 """
 
 import streamlit as st
@@ -10,17 +10,14 @@ import numpy as np
 import plotly.graph_objects as go
 import yfinance as yf
 
-# --- Grundkonfiguration ---
 st.set_page_config(page_title="ShiftWN Wächter", page_icon="⚡", layout="wide")
-
 st.title("⚡ ShiftWN Markt-Wächter")
-st.caption("Neuaufbau · Schritt 3: Random-Walk-Analyse")
+st.caption("Neuaufbau · Schritt 4: Permutationsverteilung")
 
 # ============================================================
 #  ANALYSE-ENGINE
-#  Misst, ob eine Kursreihe vom Random Walk abweicht.
-#  Prognosefrei. Statistische Signifikanz ist NICHT gleich
-#  Handelbarkeit. Kein Kauf-/Verkaufssignal.
+#  Misst, ob eine Kursreihe vom Random Walk abweicht. Prognosefrei.
+#  Statistische Signifikanz ist NICHT gleich Handelbarkeit.
 # ============================================================
 
 def normiere(kurse):
@@ -30,7 +27,6 @@ def normiere(kurse):
     return (c - ref) / skala
 
 def varianz_ratio(kurse, q=5):
-    """Lo-MacKinlay VR(q). =1 unter Random Walk. <1 Mean-Reversion, >1 Trending."""
     p = normiere(kurse); r = np.diff(p); n = len(r)
     if n < q + 2:
         return 1.0
@@ -40,7 +36,6 @@ def varianz_ratio(kurse, q=5):
     return float(varq / (q * var1)) if var1 else 1.0
 
 def runs_z(kurse):
-    """Standardisierte Vorzeichen-Run-Anzahl. |z| groß => Reihenfolge nicht zufällig."""
     r = np.diff(normiere(kurse)); s = np.sign(r); s = s[s != 0]; n = len(s)
     if n < 10:
         return 0.0
@@ -53,27 +48,27 @@ def runs_z(kurse):
     return float((runs - erwartung) / np.sqrt(varianz)) if varianz > 0 else 0.0
 
 def acf_lag1(kurse):
-    """Lag-1-Autokorrelation der Returns."""
     r = np.diff(normiere(kurse)); r = r - r.mean()
     nenner = np.sum(r * r) or 1e-12
     return float(np.sum(r[:-1] * r[1:]) / nenner)
 
 def permutationstest(kurse, metrik, basiswert, n_perm=400, seed=0):
-    """Shuffelt die Returns vielfach. p-Wert = Anteil der Surrogate, die
-    mindestens so weit vom Basiswert abweichen wie die echte Reihe.
-    Kleiner p-Wert => echte (reihenfolge-abhängige) Struktur."""
+    """Gibt beobachteten Wert, p-Wert UND die Surrogat-Verteilung zurück."""
     rng = np.random.default_rng(seed)
     c = normiere(kurse); steps = np.diff(c)
     beobachtet = metrik(kurse)
     abweichung = abs(beobachtet - basiswert)
+    surrogate = np.empty(n_perm)
     zaehler = 0
-    for _ in range(n_perm):
+    for i in range(n_perm):
         perm = rng.permutation(steps)
-        surrogat = np.concatenate([[c[0]], c[0] + np.cumsum(perm)])
-        if abs(metrik(surrogat) - basiswert) >= abweichung:
+        surrogat_reihe = np.concatenate([[c[0]], c[0] + np.cumsum(perm)])
+        wert = metrik(surrogat_reihe)
+        surrogate[i] = wert
+        if abs(wert - basiswert) >= abweichung:
             zaehler += 1
     p = (zaehler + 1) / (n_perm + 1)
-    return beobachtet, p
+    return beobachtet, p, surrogate
 
 # ============================================================
 #  AUSWAHL + DATEN
@@ -113,21 +108,21 @@ with st.spinner(f"Lade {markt_name}-Daten ..."):
     kurse = lade_daten(ticker, period, interval)
 
 if kurse is None or len(kurse) < 30:
-    st.error("❌ Konnte keine ausreichenden Marktdaten laden. Anderen Markt/Granularität versuchen.")
+    st.error("❌ Konnte keine ausreichenden Marktdaten laden. Anderen Markt/Granularität versuchen "
+             "(oder noch einmal denselben – Yahoo antwortet manchmal erst beim zweiten Versuch).")
     st.stop()
 
-# auf max. 500 Punkte begrenzen (Geschwindigkeit des Permutationstests)
 segment = kurse[-min(len(kurse), 500):]
 aktueller_preis = float(kurse[-1])
 
 # ============================================================
-#  ANALYSE AUSFÜHREN
+#  ANALYSE
 # ============================================================
 
 with st.spinner("Analysiere Marktstruktur ..."):
-    vr, p_vr = permutationstest(segment, varianz_ratio, 1.0, n_perm)
-    rz, p_rz = permutationstest(segment, runs_z, 0.0, n_perm)
-    ac, p_ac = permutationstest(segment, acf_lag1, 0.0, n_perm)
+    vr, p_vr, dist_vr = permutationstest(segment, varianz_ratio, 1.0, n_perm)
+    rz, p_rz, _        = permutationstest(segment, runs_z, 0.0, n_perm)
+    ac, p_ac, _        = permutationstest(segment, acf_lag1, 0.0, n_perm)
 
 min_p = min(p_vr, p_rz, p_ac)
 struktur_erkannt = min_p < alpha
@@ -141,10 +136,10 @@ if struktur_erkannt:
         tendenz = "Momentum"
     else:
         tendenz = "Struktur (Art unklar)"
-    befund = "🟢 STRUKTUR ERKANNT"
+    befund_icon, befund_text = "🟢", "STRUKTUR ERKANNT"
 else:
     tendenz = "—"
-    befund = "🟠 RANDOM-WALK-KONSISTENT"
+    befund_icon, befund_text = "🟠", "RANDOM-WALK-KONSISTENT"
 
 # ============================================================
 #  ANZEIGE
@@ -153,11 +148,9 @@ else:
 st.caption(f"Analyse {markt_name} · {gran_name}")
 
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("Befund", befund.split()[0])
-k1.caption(befund.split(" ", 1)[1])
+k1.metric("Befund", befund_icon); k1.caption(befund_text)
 k2.metric("Aktueller Preis", f"{aktueller_preis:,.2f}")
-k3.metric("kleinster p-Wert", f"{min_p:.3f}")
-k3.caption(f"α = {alpha}")
+k3.metric("kleinster p-Wert", f"{min_p:.3f}"); k3.caption(f"α = {alpha}")
 k4.metric("Tendenz", tendenz)
 
 # Teststatistiken
@@ -171,16 +164,33 @@ for spalte, name, wert, p in [
     sig = "✓ signifikant" if p < alpha else "nicht signifikant"
     spalte.metric(name, f"{wert:.3f}", f"p={p:.3f} · {sig}")
 
-# Chart
-st.markdown(f"#### Preisverlauf {markt_name}")
-fig = go.Figure()
-fig.add_trace(go.Scatter(y=segment, mode="lines",
-              line=dict(color="#00ff88", width=2), name=markt_name))
-fig.update_layout(height=420, template="plotly_dark",
-                  margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
-st.plotly_chart(fig, use_container_width=True)
+# Zweispaltig: Preisverlauf | Permutationsverteilung
+links, rechts = st.columns(2)
 
-st.caption(f"{len(segment)} Datenpunkte analysiert · "
-           "Misst Abweichung vom Random Walk. Statistische Signifikanz ≠ Handelbarkeit. "
-           "Keine Anlageberatung.")
-st.info("Nächster Schritt: die Permutationsverteilung als Grafik anzeigen (zweispaltiges Layout).")
+with links:
+    st.markdown(f"#### Preisverlauf {markt_name}")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(y=segment, mode="lines",
+                  line=dict(color="#00ff88", width=2), name=markt_name))
+    fig.update_layout(height=400, template="plotly_dark",
+                      margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+with rechts:
+    st.markdown("#### Permutationstest: Beobachtung vs. Zufall")
+    fig2 = go.Figure()
+    fig2.add_trace(go.Histogram(x=dist_vr, nbinsx=40,
+                   marker_color="rgba(120,120,160,0.6)", name="Surrogate (geshuffelt)"))
+    fig2.add_vline(x=vr, line_color="#00ff88", line_width=3,
+                   annotation_text=f"beobachtet VR={vr:.2f}", annotation_position="top")
+    fig2.add_vline(x=1.0, line_dash="dot", line_color="orange",
+                   annotation_text="RW-Erwartung")
+    fig2.update_layout(height=400, template="plotly_dark",
+                       margin=dict(l=0, r=0, t=10, b=0), showlegend=False,
+                       xaxis_title="VR(5) der permutierten Reihen")
+    st.plotly_chart(fig2, use_container_width=True)
+
+st.caption("Liegt der grüne Strich klar außerhalb der grauen Verteilung, weicht die Reihe vom "
+           "Random Walk ab. Liegt er mittendrin: Rauschen. · "
+           f"{len(segment)} Datenpunkte · Statistische Signifikanz ≠ Handelbarkeit. Keine Anlageberatung.")
+st.info("Nächster Schritt: den KI-Wächter einbauen (externe Empfehlung einfügen + Plausibilitätsurteil).")
