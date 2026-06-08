@@ -1,9 +1,12 @@
 """
 ShiftWN AI – Geometrische Marktanalyse mit adaptivem Photonics-Kern
-Struktur:  1) Multi-Markt-Radar  2) Detailanalyse  3) KI-Wächter
-Patentierter Kern: Triangle · Vortex · Impulse FFT · Photonics (Aussagekraft-
-Gewichtung + Regime-Bruch-Erkennung).  Patent EPA EP25221251.9 / SPECEPO-1/2.
-Keine Anlageberatung.
+Struktur: 1) Markt-Radar  2) Detailanalyse  3) KI-Wächter
+Look: Anthrazit/Graphit + Teal (technisch-premium).
+Alerts: visuell in der App (neues Signal / Schock werden hervorgehoben).
+        E-Mail-Zustellung = dokumentierter nächster Schritt (separater Dienst,
+        erst nach rechtlicher Klärung – siehe Hinweis unten im Code).
+Patentierter Kern: Triangle · Vortex · Impulse FFT · Photonics.
+Patent EPA EP25221251.9 / SPECEPO-1/2.  Keine Anlageberatung.
 """
 
 import streamlit as st
@@ -16,24 +19,35 @@ from datetime import datetime
 
 st.set_page_config(page_title="ShiftWN AI", layout="wide", page_icon="⚡")
 
-# ---------------- Look: ruhig, dunkel, klare Karten ----------------
-st.markdown("""
+# ---------------- Farbpalette: Anthrazit/Graphit + Teal ----------------
+BG="#11151c"; BG_ALT="#161b24"; CARD="#1a212c"; BORDER="#2a323f"
+TEAL="#2dd4bf"; TEXT="#e4e8ee"; MUTED="#8b96a5"; FAINT="#5b6675"
+BUY="#2dd4bf"; SELL="#f0786b"; HOLD="#8b96a5"; SHOCK="#e0a356"
+
+st.markdown(f"""
 <style>
-    .stApp {background:#0a0e16; color:#e8edf4;}
-    section[data-testid="stSidebar"]{background:#0f1521;}
-    h1{color:#00ff9d;font-weight:800;letter-spacing:-.5px;margin-bottom:0;}
-    h2{color:#d6f5e6;font-weight:700;border-bottom:1px solid #1e2838;padding-bottom:6px;margin-top:8px;}
-    h3{color:#d6f5e6;font-weight:600;}
-    .stMetric{background:#141b29;border:1px solid #1e2838;border-radius:12px;padding:14px 16px;}
-    [data-testid="stMetricValue"]{color:#00ff9d;font-size:1.4rem;}
-    [data-testid="stMetricLabel"]{color:#9aa6b8;}
-    .stButton>button{background:#00ff9d;color:#06210f;font-weight:700;border:none;border-radius:8px;}
-    div[data-testid="stMarkdownContainer"] code{color:#00ff9d;}
-    .block-container{padding-top:2.2rem;}
-    /* Radar-Karten */
-    .radar{background:#121a28;border:1px solid #1e2838;border-radius:12px;padding:12px 14px;margin-bottom:8px;}
-    .radar b{color:#e8edf4;font-size:1.02rem;}
-    .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:700;}
+    .stApp {{background:{BG};color:{TEXT};}}
+    section[data-testid="stSidebar"]{{background:{BG_ALT};border-right:1px solid {BORDER};}}
+    h1{{color:{TEXT};font-weight:700;letter-spacing:-.5px;margin-bottom:0;}}
+    h1 + div, .app-sub {{color:{MUTED};}}
+    h2{{color:{TEXT};font-weight:600;font-size:1.15rem;text-transform:uppercase;
+        letter-spacing:1.5px;border-bottom:1px solid {BORDER};padding-bottom:8px;margin-top:14px;}}
+    h2 .num{{color:{TEAL};font-weight:700;margin-right:8px;}}
+    h3{{color:{TEXT};font-weight:600;}}
+    .stMetric{{background:{CARD};border:1px solid {BORDER};border-radius:14px;padding:16px 18px;}}
+    [data-testid="stMetricValue"]{{color:{TEAL};font-size:1.35rem;font-weight:600;}}
+    [data-testid="stMetricLabel"]{{color:{MUTED};font-size:.8rem;text-transform:uppercase;letter-spacing:.5px;}}
+    .stButton>button{{background:{TEAL};color:#06231f;font-weight:700;border:none;border-radius:8px;}}
+    div[data-testid="stMarkdownContainer"] code{{color:{TEAL};}}
+    .block-container{{padding-top:2.4rem;max-width:1400px;}}
+    .radar{{background:{CARD};border:1px solid {BORDER};border-radius:14px;padding:14px 16px;
+            margin-bottom:8px;transition:border-color .2s;}}
+    .radar:hover{{border-color:{TEAL};}}
+    .radar .nm{{color:{TEXT};font-size:1.04rem;font-weight:600;}}
+    .radar .px{{color:{MUTED};font-size:.82rem;}}
+    .radar .md{{color:{FAINT};font-size:.72rem;letter-spacing:.3px;}}
+    .pill{{display:inline-block;padding:3px 12px;border-radius:999px;font-size:.76rem;font-weight:700;margin:6px 0;}}
+    .alertbar{{border-radius:12px;padding:14px 18px;margin:6px 0 14px 0;font-weight:600;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -99,18 +113,15 @@ def analyse(closes,win=50):
     return photonics(triangle(_build(cur)),vortex(_build(cur)),impulse(_build(cur)),pmk)
 
 def signal_from(ph,drift_th=0.06,kappa_min=0.35):
-    if ph["regime_break"]: return "SCHOCK","⚠️","#e0883a"
-    if ph["mean_kappa"]>kappa_min and ph["drift"]>drift_th: return "HEDGE_BUY","🟢","#00ff9d"
-    if ph["mean_kappa"]>kappa_min and ph["drift"]<-drift_th: return "HEDGE_SELL","🔴","#e25c5c"
-    return "HOLD","🟠","#9aa6b8"
+    if ph["regime_break"]: return "SCHOCK","⚠",SHOCK
+    if ph["mean_kappa"]>kappa_min and ph["drift"]>drift_th: return "HEDGE_BUY","▲",BUY
+    if ph["mean_kappa"]>kappa_min and ph["drift"]<-drift_th: return "HEDGE_SELL","▼",SELL
+    return "HOLD","■",HOLD
 
 def fibonacci_levels(c):
     hi,lo=np.max(c),np.min(c); d=hi-lo
     return {"0.0%":hi,"23.6%":hi-.236*d,"38.2%":hi-.382*d,"50.0%":hi-.5*d,"61.8%":hi-.618*d,"78.6%":hi-.786*d,"100.0%":lo}
 
-# ============================================================
-#  KI-WÄCHTER PARSER
-# ============================================================
 def parse_ki(text):
     out={"direction":"HOLD","confidence":None,"target":None,"stop":None}
     if not text: return out
@@ -125,9 +136,6 @@ def parse_ki(text):
     out["direction"]="SELL" if hs and not hb else "BUY" if hb and not hs else "CONFLICT" if hb and hs else "HOLD"
     return out
 
-# ============================================================
-#  DATEN
-# ============================================================
 MARKETS={"DAX":["^GDAXI","EXS1.DE"],"S&P 500":["^GSPC"],"Dow Jones":["^DJI"],"Nasdaq":["^IXIC"],
          "TecDAX":["^TECDAX"],"Bitcoin":["BTC-USD"],"Gold":["GC=F"]}
 GRAN={"Täglich (2 Jahre)":("2y","1d"),"15-Minuten (1 Monat)":("1mo","15m"),"5-Minuten (5 Tage)":("5d","5m")}
@@ -158,52 +166,72 @@ with st.sidebar:
     auto=st.checkbox("Automatisch aktualisieren",value=False)
     takt=st.select_slider("Takt",options=[15,30,60,120,300],value=60,format_func=lambda s:f"{s}s")
     st.divider()
+    st.subheader("🔔 Alerts")
+    alert_on=st.checkbox("Signal-Wechsel hervorheben",value=True)
+    st.caption("Visueller Alert in der App. E-Mail-Zustellung folgt als separater Dienst nach rechtlicher Klärung.")
+    st.divider()
     st.subheader("🛡️ KI-Wächter")
-    external=st.text_area("KI-Empfehlung",height=130,placeholder="Empfehlung von ChatGPT, Grok ...")
+    external=st.text_area("KI-Empfehlung",height=120,placeholder="Empfehlung von ChatGPT, Grok ...")
     ki_on=st.checkbox("Wächter aktivieren",value=True)
 
 period,interval=GRAN[gran_name]
 
 # ---------------- Kopf ----------------
 st.title("⚡ ShiftWN AI")
-st.caption(f"Adaptive geometrische Marktanalyse · Patent EPA EP25221251.9 · "
-           f"Stand {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
+st.markdown(f"<div class='app-sub'>Adaptive geometrische Marktanalyse · Patent EPA EP25221251.9 · "
+            f"Stand {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</div>", unsafe_allow_html=True)
 
 # ============================================================
-#  1) MULTI-MARKT-RADAR
+#  1) MARKT-RADAR  (+ Alert-Erkennung via session_state)
 # ============================================================
-st.markdown("## 1 · Markt-Radar")
-st.caption("Alle Märkte gleichzeitig – wo ist ein Signal, wo ein Schock?")
+st.markdown(f"## <span class='num'>1</span> Markt-Radar", unsafe_allow_html=True)
 
-radar=[]
+if "last_signals" not in st.session_state: st.session_state.last_signals={}
+radar=[]; current_signals={}
 for nm,tl in MARKETS.items():
     cf,used=get_data(tuple(tl),period,interval)
-    if cf is None: radar.append((nm,None,None,None,None)); continue
+    if cf is None: radar.append((nm,None)); continue
     cc=cf[-min(len(cf),300):]; ph=analyse(cc,50); sig,icon,col=signal_from(ph,drift_th,kappa_min)
-    radar.append((nm,float(cf[-1]),sig,icon,col,ph))
+    radar.append((nm,float(cf[-1]),sig,icon,col,ph)); current_signals[nm]=sig
+
+# Alert: welche Signale haben sich seit dem letzten Lauf geändert?
+changes=[]
+if alert_on and st.session_state.last_signals:
+    for nm,sig in current_signals.items():
+        prev=st.session_state.last_signals.get(nm)
+        if prev is not None and prev!=sig:
+            changes.append((nm,prev,sig))
+st.session_state.last_signals=current_signals
+
+# Alert-Banner
+shocks=[r[0] for r in radar if len(r)>2 and r[2]=="SCHOCK"]
+if shocks:
+    st.markdown(f"<div class='alertbar' style='background:{SHOCK}1a;border:1px solid {SHOCK}66;color:{SHOCK}'>"
+                f"⚠ Regime-Bruch erkannt: {', '.join(shocks)} – gewohnte Struktur gilt dort nicht mehr.</div>",
+                unsafe_allow_html=True)
+if changes:
+    txt=" · ".join([f"{nm}: {p}→{s}" for nm,p,s in changes])
+    st.markdown(f"<div class='alertbar' style='background:{TEAL}1a;border:1px solid {TEAL}66;color:{TEAL}'>"
+                f"🔔 Signal-Wechsel: {txt}</div>", unsafe_allow_html=True)
 
 cols=st.columns(len(radar))
 for i,row in enumerate(radar):
     with cols[i]:
         if row[1] is None:
-            st.markdown(f"<div class='radar'><b>{row[0]}</b><br><span style='color:#9aa6b8'>keine Daten</span></div>",unsafe_allow_html=True)
+            st.markdown(f"<div class='radar'><div class='nm'>{row[0]}</div>"
+                        f"<div class='px' style='color:{FAINT}'>keine Daten</div></div>",unsafe_allow_html=True)
         else:
             nm,price,sig,icon,col,ph=row
-            st.markdown(f"<div class='radar'><b>{nm}</b><br>"
-                        f"<span style='color:#9aa6b8;font-size:.85rem'>{price:,.0f}</span><br>"
-                        f"<span class='pill' style='background:{col}22;color:{col};border:1px solid {col}55'>{icon} {sig}</span><br>"
-                        f"<span style='color:#6b7688;font-size:.72rem'>{ph['modus']} · κØ {ph['mean_kappa']:.2f}</span></div>",
+            st.markdown(f"<div class='radar'><div class='nm'>{nm}</div>"
+                        f"<div class='px'>{price:,.0f}</div>"
+                        f"<span class='pill' style='background:{col}1f;color:{col};border:1px solid {col}55'>{icon} {sig}</span>"
+                        f"<div class='md'>{ph['modus']} · κØ {ph['mean_kappa']:.2f}</div></div>",
                         unsafe_allow_html=True)
-
-# Schock-Warnung global
-schocks=[r[0] for r in radar if r[1] is not None and r[2]=="SCHOCK"]
-if schocks:
-    st.error(f"⚠️ Regime-Bruch erkannt in: {', '.join(schocks)} – gewohnte Struktur gilt dort nicht mehr.")
 
 # ============================================================
 #  2) DETAILANALYSE
 # ============================================================
-st.markdown(f"## 2 · Detailanalyse — {market_name}")
+st.markdown(f"## <span class='num'>2</span> Detailanalyse — {market_name}", unsafe_allow_html=True)
 cf,used=get_data(tuple(MARKETS[market_name]),period,interval)
 if cf is None:
     st.error("Keine Daten für den gewählten Detailmarkt.")
@@ -219,28 +247,33 @@ else:
     m4.metric("Aussagekraft Ø",f"{ph['mean_kappa']:.2f}")
 
     if ph["regime_break"]:
-        st.error(f"⚠️ **Regime-Bruch** – Volatilitätssprung ({ph['vol_break']:.2f}) und Einbruch der "
-                 f"Aussagekraft ({ph['kappa_drop']:.2f}). Photonics schaltet auf Impulse FFT.")
+        st.markdown(f"<div class='alertbar' style='background:{SHOCK}1a;border:1px solid {SHOCK}66;color:{SHOCK}'>"
+                    f"⚠ Regime-Bruch – Volatilitätssprung ({ph['vol_break']:.2f}) und Einbruch der Aussagekraft "
+                    f"({ph['kappa_drop']:.2f}). Photonics schaltet auf Impulse FFT.</div>", unsafe_allow_html=True)
     else:
-        st.info(f"**Marktmodus (Photonics):** {ph['modus']} · führend: {ph['dominant']}")
+        st.markdown(f"<div class='alertbar' style='background:{CARD};border:1px solid {BORDER};color:{MUTED}'>"
+                    f"Marktmodus (Photonics): <b style='color:{TEXT}'>{ph['modus']}</b> · führend: {ph['dominant']}</div>",
+                    unsafe_allow_html=True)
 
     left,right=st.columns([3,2])
     with left:
         fig=go.Figure()
-        fig.add_trace(go.Scatter(y=closes,mode="lines",line=dict(color="#00ff9d",width=2.4)))
+        fig.add_trace(go.Scatter(y=closes,mode="lines",line=dict(color=TEAL,width=2.2)))
         for nmf,pr in fibonacci_levels(closes).items():
-            fig.add_hline(y=pr,line_dash="dash",line_color="rgba(255,210,0,.28)",
-                          annotation_text=nmf,annotation_font_color="rgba(255,210,0,.65)")
-        fig.update_layout(height=420,template="plotly_dark",paper_bgcolor="#0a0e16",plot_bgcolor="#0a0e16",
-                          margin=dict(l=0,r=0,t=8,b=0),showlegend=False)
+            fig.add_hline(y=pr,line_dash="dot",line_color="rgba(139,150,165,.28)",
+                          annotation_text=nmf,annotation_font_color="rgba(139,150,165,.7)",annotation_font_size=10)
+        fig.update_layout(height=420,template="plotly_dark",paper_bgcolor=BG,plot_bgcolor=BG,
+                          margin=dict(l=0,r=0,t=8,b=0),showlegend=False,
+                          xaxis=dict(gridcolor=BORDER),yaxis=dict(gridcolor=BORDER))
         st.plotly_chart(fig,use_container_width=True)
     with right:
         st.markdown("**Photonics — Gewichtung nach Aussagekraft**")
         fig2=go.Figure(go.Bar(x=[ph["w"][0],ph["w"][1],ph["w"][2]],y=["Triangle","Vortex","Impulse FFT"],
-            orientation="h",marker_color=["#00ff9d","#00b3ff","#ff9d3c"],
+            orientation="h",marker_color=[TEAL,"#4a9fd4","#d49a5a"],
             text=[f"{ph['w'][0]:.0%}",f"{ph['w'][1]:.0%}",f"{ph['w'][2]:.0%}"],textposition="auto"))
-        fig2.update_layout(height=180,template="plotly_dark",paper_bgcolor="#0a0e16",plot_bgcolor="#0a0e16",
-                           margin=dict(l=0,r=10,t=4,b=20),xaxis_range=[0,1])
+        fig2.update_layout(height=180,template="plotly_dark",paper_bgcolor=BG,plot_bgcolor=BG,
+                           margin=dict(l=0,r=10,t=4,b=20),xaxis_range=[0,1],
+                           xaxis=dict(gridcolor=BORDER),yaxis=dict(gridcolor=BORDER))
         st.plotly_chart(fig2,use_container_width=True)
         st.caption(f"κ: T {ph['T']:.2f} · V {ph['V']:.2f} · F {ph['F']:.2f}. Blinde Module verlieren Gewicht.")
 
@@ -248,7 +281,7 @@ else:
     #  3) KI-WÄCHTER
     # ============================================================
     if external and ki_on:
-        st.markdown("## 3 · KI-Wächter")
+        st.markdown(f"## <span class='num'>3</span> KI-Wächter", unsafe_allow_html=True)
         ki=parse_ki(external); d=ki["direction"]
         a,b=st.columns(2)
         with a:
@@ -259,19 +292,25 @@ else:
             st.markdown("**ShiftWN sagt:**"); st.success(f"{icon} {sig}")
             st.caption(f"Modus {ph['modus']} · Drift {ph['drift']:+.3f} · κØ {ph['mean_kappa']:.2f}")
         sdir={"HEDGE_BUY":"BUY","HEDGE_SELL":"SELL","HOLD":"NEUTRAL","SCHOCK":"SHOCK"}[sig]
-        if d=="CONFLICT": st.warning("⚠️ Empfehlung mehrdeutig (Kauf und Verkauf). Manuell prüfen.")
-        elif sdir=="SHOCK": st.error(f"⚠️ Regime-Bruch: Die Empfehlung (**{d}**) beruht auf der gewohnten Struktur, die gerade nicht gilt. Hier laufen normale Modelle blind hinein.")
+        if d=="CONFLICT": st.warning("⚠ Empfehlung mehrdeutig (Kauf und Verkauf). Manuell prüfen.")
+        elif sdir=="SHOCK": st.error(f"⚠ Regime-Bruch: Die Empfehlung (**{d}**) beruht auf der gewohnten Struktur, die gerade nicht gilt. Hier laufen normale Modelle blind hinein.")
         elif sdir=="NEUTRAL": (st.error(f"❌ ShiftWN widerspricht: KI sagt **{d}**, ShiftWN sieht keine klare Struktur (κØ {ph['mean_kappa']:.2f}).") if d in ("BUY","SELL") else st.info("Beide: kein klares Signal."))
         elif d==sdir: st.success(f"✅ ShiftWN bestätigt: **{d}** ist mit der Marktgeometrie kohärent (Modus {ph['modus']}).")
-        elif d=="HOLD": st.warning(f"⚠️ KI sagt HOLD – ShiftWN sieht ein klares Signal ({sig}).")
+        elif d=="HOLD": st.warning(f"⚠ KI sagt HOLD – ShiftWN sieht ein klares Signal ({sig}).")
         else: st.error(f"❌ ShiftWN widerspricht: KI sagt **{d}**, ShiftWN sagt **{sig}**.")
 
 st.markdown("---")
 st.caption("ShiftWN AI · Patentierter geometrischer Kern (Triangle · Vortex · Impulse FFT · Photonics). "
            "Photonics gewichtet nach Aussagekraft und erkennt Regime-Brüche. Keine Anlageberatung.")
 
-# ---------------- Auto-Refresh (am Ende, ohne Zusatzpaket) ----------------
+# ============================================================
+#  E-MAIL-ALERT — KONZEPT / NÄCHSTER SCHRITT (bewusst nicht aktiv)
+#  Streamlit Cloud läuft nur bei offener Seite; echte Push-/E-Mail-Alerts
+#  brauchen einen separaten Dauerdienst (z.B. ein kleiner Scheduler, der
+#  analyse() periodisch ausführt und bei Signalwechsel/Schock mailt).
+#  Vor Aktivierung rechtliche Einordnung klären (Signaldienst/Beratung).
+# ============================================================
+
+# ---------------- Auto-Refresh ----------------
 if auto:
-    time.sleep(takt)
-    st.cache_data.clear()
-    st.rerun()
+    time.sleep(takt); st.cache_data.clear(); st.rerun()
