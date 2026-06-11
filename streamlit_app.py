@@ -288,17 +288,29 @@ else:
         with a:
             st.markdown("**Externe KI sagt:**"); st.info(external)
             konf=f" · Konfidenz {ki['confidence']} %" if ki["confidence"] is not None else ""
-            st.caption(f"Richtung **{d}**{konf} · Ziel {ki['target']} · Stop {ki['stop']}")
+            st.caption(f"Richtung {d}{konf} · Ziel {ki['target']} · Stop {ki['stop']}")
         with b:
             st.markdown("**ShiftWN sagt:**"); st.success(f"{icon} {sig}")
             st.caption(f"Modus {ph['modus']} · Drift {ph['drift']:+.3f} · κØ {ph['mean_kappa']:.2f}")
-        sdir={"HEDGE_BUY":"BUY","HEDGE_SELL":"SELL","HOLD":"NEUTRAL","SCHOCK":"SHOCK"}[sig]
-        if d=="CONFLICT": st.warning("⚠ Empfehlung mehrdeutig (Kauf und Verkauf). Manuell prüfen.")
-        elif sdir=="SHOCK": st.error(f"⚠ Regime-Bruch: Die Empfehlung (**{d}**) beruht auf der gewohnten Struktur, die gerade nicht gilt. Hier laufen normale Modelle blind hinein.")
-        elif sdir=="NEUTRAL": (st.error(f"❌ ShiftWN widerspricht: KI sagt **{d}**, ShiftWN sieht keine klare Struktur (κØ {ph['mean_kappa']:.2f}).") if d in ("BUY","SELL") else st.info("Beide: kein klares Signal."))
-        elif d==sdir: st.success(f"✅ ShiftWN bestätigt: **{d}** ist mit der Marktgeometrie kohärent (Modus {ph['modus']}).")
-        elif d=="HOLD": st.warning(f"⚠ KI sagt HOLD – ShiftWN sieht ein klares Signal ({sig}).")
-        else: st.error(f"❌ ShiftWN widerspricht: KI sagt **{d}**, ShiftWN sagt **{sig}**.")
+        sdir = {"HEDGE_BUY":"BUY", "HEDGE_SELL":"SELL", "HOLD":"NEUTRAL", "SCHOCK":"SHOCK"}[sig]
+        kappa_txt = f"{ph['mean_kappa']:.2f}"
+        if d == "CONFLICT":
+            st.warning("Empfehlung mehrdeutig (Kauf und Verkauf zugleich). Bitte manuell prüfen.")
+        elif sdir == "SHOCK":
+            st.error(f"Regime-Bruch: Die Empfehlung ({d}) beruht auf der gewohnten Struktur, "
+                     f"die gerade nicht gilt. Hier laufen normale Modelle blind hinein.")
+        elif sdir == "NEUTRAL":
+            if d in ("BUY", "SELL"):
+                st.error(f"ShiftWN widerspricht: KI sagt {d}, ShiftWN sieht keine klare Struktur "
+                         f"(Aussagekraft {kappa_txt}).")
+            else:
+                st.info("Beide Seiten sehen kein klares Signal.")
+        elif d == sdir:
+            st.success(f"ShiftWN bestätigt: {d} ist mit der Marktgeometrie kohärent (Modus {ph['modus']}).")
+        elif d == "HOLD":
+            st.warning(f"KI sagt HOLD – ShiftWN sieht jedoch ein klares Signal ({sig}).")
+        else:
+            st.error(f"ShiftWN widerspricht: KI sagt {d}, ShiftWN sagt {sig}.")
 
 st.markdown("---")
 st.caption("ShiftWN AI · Patentierter geometrischer Kern (Triangle · Vortex · Impulse FFT · Photonics). "
