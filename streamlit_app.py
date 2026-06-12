@@ -193,33 +193,39 @@ st.markdown(f"## <span class='num'>1</span> Markt-Radar", unsafe_allow_html=True
 
 if "last_signals" not in st.session_state: st.session_state.last_signals={}
 
-radar_an = st.checkbox("Radar laden (alle Märkte gleichzeitig prüfen)", value=False,
-                       help="Lädt alle Märkte. Beim ersten Mal dauert das einige Sekunden.")
+@st.cache_data(ttl=120, show_spinner=False)
+def load_all_markets(market_items, period, interval):
+    """Lädt alle Märkte parallel – sieben Abrufe dauern zusammen so lang wie einer."""
+    from concurrent.futures import ThreadPoolExecutor
+    def one(item):
+        nm, tl = item
+        cf, used = get_data(tuple(tl), period, interval)
+        return nm, cf
+    out = {}
+    with ThreadPoolExecutor(max_workers=len(market_items)) as ex:
+        for nm, cf in ex.map(one, market_items):
+            out[nm] = cf
+    return out
+
+with st.spinner("Lade Markt-Radar ..."):
+    market_data = load_all_markets(tuple(MARKETS.items()), period, interval)
 
 radar=[]; current_signals={}
-if radar_an:
-    prog = st.progress(0.0, text="Lade Märkte ...")
-    items = list(MARKETS.items())
-    for idx,(nm,tl) in enumerate(items):
-        cf,used=get_data(tuple(tl),period,interval)
-        if cf is None: radar.append((nm,None))
-        else:
-            cc=cf[-min(len(cf),300):]; ph=analyse(cc,50); sig,icon,col=signal_from(ph,drift_th,kappa_min)
-            radar.append((nm,float(cf[-1]),sig,icon,col,ph)); current_signals[nm]=sig
-        prog.progress((idx+1)/len(items), text=f"Lade Märkte ... {nm}")
-    prog.empty()
-else:
-    st.caption("Radar ist aus, damit die App schnell startet. Oben aktivieren, um alle Märkte gleichzeitig zu prüfen.")
+for nm in MARKETS:
+    cf = market_data.get(nm)
+    if cf is None:
+        radar.append((nm,None)); continue
+    cc=cf[-min(len(cf),300):]; ph=analyse(cc,50); sig,icon,col=signal_from(ph,drift_th,kappa_min)
+    radar.append((nm,float(cf[-1]),sig,icon,col,ph)); current_signals[nm]=sig
 
 # Alert: welche Signale haben sich seit dem letzten Lauf geändert?
 changes=[]
-if radar_an and alert_on and st.session_state.last_signals:
+if alert_on and st.session_state.last_signals:
     for nm,sig in current_signals.items():
         prev=st.session_state.last_signals.get(nm)
         if prev is not None and prev!=sig:
             changes.append((nm,prev,sig))
-if radar_an:
-    st.session_state.last_signals=current_signals
+st.session_state.last_signals=current_signals
 
 # Alert-Banner
 shocks=[r[0] for r in radar if len(r)>2 and r[2]=="SCHOCK"]
@@ -232,20 +238,19 @@ if changes:
     st.markdown(f"<div class='alertbar' style='background:{TEAL}1a;border:1px solid {TEAL}66;color:{TEAL}'>"
                 f"Signal-Wechsel: {txt}</div>", unsafe_allow_html=True)
 
-if radar:
-    cols=st.columns(len(radar))
-    for i,row in enumerate(radar):
-        with cols[i]:
-            if row[1] is None:
-                st.markdown(f"<div class='radar'><div class='nm'>{row[0]}</div>"
-                            f"<div class='px' style='color:{FAINT}'>keine Daten</div></div>",unsafe_allow_html=True)
-            else:
-                nm,price,sig,icon,col,ph=row
-                st.markdown(f"<div class='radar'><div class='nm'>{nm}</div>"
-                            f"<div class='px'>{price:,.0f}</div>"
-                            f"<span class='pill' style='background:{col}1f;color:{col};border:1px solid {col}55'>{icon} {sig}</span>"
-                            f"<div class='md'>{ph['modus']} · κØ {ph['mean_kappa']:.2f}</div></div>",
-                            unsafe_allow_html=True)
+cols=st.columns(len(radar))
+for i,row in enumerate(radar):
+    with cols[i]:
+        if row[1] is None:
+            st.markdown(f"<div class='radar'><div class='nm'>{row[0]}</div>"
+                        f"<div class='px' style='color:{FAINT}'>lädt …</div></div>",unsafe_allow_html=True)
+        else:
+            nm,price,sig,icon,col,ph=row
+            st.markdown(f"<div class='radar'><div class='nm'>{nm}</div>"
+                        f"<div class='px'>{price:,.0f}</div>"
+                        f"<span class='pill' style='background:{col}1f;color:{col};border:1px solid {col}55'>{icon} {sig}</span>"
+                        f"<div class='md'>{ph['modus']} · κØ {ph['mean_kappa']:.2f}</div></div>",
+                        unsafe_allow_html=True)
 
 # ============================================================
 #  2) DETAILANALYSE
