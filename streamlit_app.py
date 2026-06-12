@@ -187,6 +187,82 @@ st.markdown(f"<div class='app-sub'>Adaptive geometrische Marktanalyse · Patent 
             f"Stand {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</div>", unsafe_allow_html=True)
 
 # ============================================================
+#  0) LIVE-BITCOIN  (Live-Analyse, 5-Minuten, mit Signal-Verlauf)
+#     Reine Analyse – kein Geld, keine Order-Ausführung.
+# ============================================================
+st.markdown(f"## <span class='num'>0</span> Live-Bitcoin", unsafe_allow_html=True)
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_btc_live():
+    """Bitcoin auf 5-Minuten-Basis, kurzer Zeitraum, mit Timeout."""
+    try:
+        df = yf.download("BTC-USD", period="5d", interval="5m",
+                         progress=False, auto_adjust=True, timeout=8)
+    except Exception:
+        df = None
+    if df is not None and not df.empty:
+        k = df["Close"].values.flatten(); k = k[~np.isnan(k)]
+        if len(k) >= 100:
+            return k
+    return None
+
+with st.spinner("Lade Live-Bitcoin (5-Min) ..."):
+    btc = get_btc_live()
+
+if btc is None:
+    st.warning("Live-Bitcoin-Daten gerade nicht verfügbar. Bitte kurz erneut versuchen.")
+else:
+    btc_closes = btc[-min(len(btc),300):]
+    btc_price = float(btc[-1])
+    btc_ph = analyse(btc_closes, 50)
+    btc_sig, btc_icon, btc_col = signal_from(btc_ph, drift_th, kappa_min)
+
+    # Signal-Verlauf (innerhalb der Sitzung)
+    if "btc_history" not in st.session_state:
+        st.session_state.btc_history = []
+    hist = st.session_state.btc_history
+    now_str = datetime.now().strftime("%H:%M:%S")
+    if not hist or hist[-1]["signal"] != btc_sig:
+        hist.append({"zeit": now_str, "signal": btc_sig, "preis": btc_price,
+                     "modus": btc_ph["modus"], "drift": btc_ph["drift"]})
+        st.session_state.btc_history = hist[-30:]  # letzte 30 Wechsel behalten
+
+    bL, bR = st.columns([3,2])
+    with bL:
+        b1,b2,b3,b4 = st.columns(4)
+        b1.metric("Bitcoin (5-Min)", f"{btc_price:,.0f}")
+        b2.metric("ShiftWN-Signal", f"{btc_icon} {btc_sig}")
+        b3.metric("Drift", f"{btc_ph['drift']:+.3f}")
+        b4.metric("Aussagekraft Ø", f"{btc_ph['mean_kappa']:.2f}")
+        if btc_ph["regime_break"]:
+            st.markdown(f"<div class='alertbar' style='background:{SHOCK}1a;border:1px solid {SHOCK}66;color:{SHOCK}'>"
+                        f"Regime-Bruch bei Bitcoin – die gewohnte Struktur gilt gerade nicht.</div>",
+                        unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='alertbar' style='background:{CARD};border:1px solid {BORDER};color:{MUTED}'>"
+                        f"Marktmodus (Photonics): <b style='color:{TEXT}'>{btc_ph['modus']}</b> · führend: {btc_ph['dominant']}</div>",
+                        unsafe_allow_html=True)
+        fig_btc = go.Figure()
+        fig_btc.add_trace(go.Scatter(y=btc_closes, mode="lines", line=dict(color=TEAL, width=2)))
+        fig_btc.update_layout(height=240, template="plotly_white", paper_bgcolor=BG, plot_bgcolor=CARD,
+                              margin=dict(l=0,r=0,t=6,b=0), showlegend=False,
+                              xaxis=dict(gridcolor=BORDER), yaxis=dict(gridcolor=BORDER))
+        st.plotly_chart(fig_btc, use_container_width=True)
+    with bR:
+        st.markdown("**Signal-Verlauf (diese Sitzung)**")
+        if len(st.session_state.btc_history) <= 1:
+            st.caption("Noch keine Signalwechsel erfasst. Der Verlauf füllt sich, sobald sich das Signal ändert "
+                       "(bei aktiviertem Auto-Refresh automatisch).")
+        for h in reversed(st.session_state.btc_history):
+            sig_col = {"HEDGE_BUY":BUY,"HEDGE_SELL":SELL,"HOLD":HOLD,"SCHOCK":SHOCK}.get(h["signal"],MUTED)
+            st.markdown(f"<div class='radar' style='padding:8px 12px;margin-bottom:6px'>"
+                        f"<span style='color:{MUTED};font-size:.78rem'>{h['zeit']}</span> · "
+                        f"<span style='color:{sig_col};font-weight:700'>{h['signal']}</span><br>"
+                        f"<span style='color:{FAINT};font-size:.74rem'>{h['preis']:,.0f} · {h['modus']} · Drift {h['drift']:+.2f}</span></div>",
+                        unsafe_allow_html=True)
+    st.caption("Live-Analyse zur Beobachtung – ShiftWN ist Signalgeber, keine Order-Ausführung und keine Anlageberatung.")
+
+# ============================================================
 #  1) MARKT-RADAR  (+ Alert-Erkennung via session_state)
 # ============================================================
 st.markdown(f"## <span class='num'>1</span> Markt-Radar", unsafe_allow_html=True)
