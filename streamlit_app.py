@@ -142,16 +142,20 @@ MARKETS={"DAX":["^GDAXI","EXS1.DE"],"S&P 500":["^GSPC"],"Dow Jones":["^DJI"],"Na
 GRAN={"Täglich (2 Jahre)":("2y","1d"),"15-Minuten (1 Monat)":("1mo","15m"),"5-Minuten (5 Tage)":("5d","5m")}
 DIREKT=("^GDAXI","^GSPC","^DJI","^IXIC","^TECDAX","BTC-USD","GC=F")
 
-@st.cache_data(ttl=120)
-def get_data(ticker_list,period,interval,tries=2):
+@st.cache_data(ttl=120, show_spinner=False)
+def get_data(ticker_list, period, interval, tries=1):
     for tk in ticker_list:
         for _ in range(tries):
-            try: df=yf.download(tk,period=period,interval=interval,progress=False,auto_adjust=True)
-            except Exception: df=None
+            try:
+                df = yf.download(tk, period=period, interval=interval,
+                                 progress=False, auto_adjust=True, timeout=8)
+            except Exception:
+                df = None
             if df is not None and not df.empty:
-                k=df["Close"].values.flatten(); k=k[~np.isnan(k)]
-                if len(k)>=100: return k,tk
-    return None,None
+                k = df["Close"].values.flatten(); k = k[~np.isnan(k)]
+                if len(k) >= 100:
+                    return k, tk
+    return None, None
 
 # ---------------- Sidebar ----------------
 with st.sidebar:
@@ -188,54 +192,70 @@ st.markdown(f"<div class='app-sub'>Adaptive geometrische Marktanalyse · Patent 
 st.markdown(f"## <span class='num'>1</span> Markt-Radar", unsafe_allow_html=True)
 
 if "last_signals" not in st.session_state: st.session_state.last_signals={}
+
+radar_an = st.checkbox("Radar laden (alle Märkte gleichzeitig prüfen)", value=False,
+                       help="Lädt alle Märkte. Beim ersten Mal dauert das einige Sekunden.")
+
 radar=[]; current_signals={}
-for nm,tl in MARKETS.items():
-    cf,used=get_data(tuple(tl),period,interval)
-    if cf is None: radar.append((nm,None)); continue
-    cc=cf[-min(len(cf),300):]; ph=analyse(cc,50); sig,icon,col=signal_from(ph,drift_th,kappa_min)
-    radar.append((nm,float(cf[-1]),sig,icon,col,ph)); current_signals[nm]=sig
+if radar_an:
+    prog = st.progress(0.0, text="Lade Märkte ...")
+    items = list(MARKETS.items())
+    for idx,(nm,tl) in enumerate(items):
+        cf,used=get_data(tuple(tl),period,interval)
+        if cf is None: radar.append((nm,None))
+        else:
+            cc=cf[-min(len(cf),300):]; ph=analyse(cc,50); sig,icon,col=signal_from(ph,drift_th,kappa_min)
+            radar.append((nm,float(cf[-1]),sig,icon,col,ph)); current_signals[nm]=sig
+        prog.progress((idx+1)/len(items), text=f"Lade Märkte ... {nm}")
+    prog.empty()
+else:
+    st.caption("Radar ist aus, damit die App schnell startet. Oben aktivieren, um alle Märkte gleichzeitig zu prüfen.")
 
 # Alert: welche Signale haben sich seit dem letzten Lauf geändert?
 changes=[]
-if alert_on and st.session_state.last_signals:
+if radar_an and alert_on and st.session_state.last_signals:
     for nm,sig in current_signals.items():
         prev=st.session_state.last_signals.get(nm)
         if prev is not None and prev!=sig:
             changes.append((nm,prev,sig))
-st.session_state.last_signals=current_signals
+if radar_an:
+    st.session_state.last_signals=current_signals
 
 # Alert-Banner
 shocks=[r[0] for r in radar if len(r)>2 and r[2]=="SCHOCK"]
 if shocks:
     st.markdown(f"<div class='alertbar' style='background:{SHOCK}1a;border:1px solid {SHOCK}66;color:{SHOCK}'>"
-                f"⚠ Regime-Bruch erkannt: {', '.join(shocks)} – gewohnte Struktur gilt dort nicht mehr.</div>",
+                f"Regime-Bruch erkannt: {', '.join(shocks)} – gewohnte Struktur gilt dort nicht mehr.</div>",
                 unsafe_allow_html=True)
 if changes:
     txt=" · ".join([f"{nm}: {p}→{s}" for nm,p,s in changes])
     st.markdown(f"<div class='alertbar' style='background:{TEAL}1a;border:1px solid {TEAL}66;color:{TEAL}'>"
-                f"🔔 Signal-Wechsel: {txt}</div>", unsafe_allow_html=True)
+                f"Signal-Wechsel: {txt}</div>", unsafe_allow_html=True)
 
-cols=st.columns(len(radar))
-for i,row in enumerate(radar):
-    with cols[i]:
-        if row[1] is None:
-            st.markdown(f"<div class='radar'><div class='nm'>{row[0]}</div>"
-                        f"<div class='px' style='color:{FAINT}'>keine Daten</div></div>",unsafe_allow_html=True)
-        else:
-            nm,price,sig,icon,col,ph=row
-            st.markdown(f"<div class='radar'><div class='nm'>{nm}</div>"
-                        f"<div class='px'>{price:,.0f}</div>"
-                        f"<span class='pill' style='background:{col}1f;color:{col};border:1px solid {col}55'>{icon} {sig}</span>"
-                        f"<div class='md'>{ph['modus']} · κØ {ph['mean_kappa']:.2f}</div></div>",
-                        unsafe_allow_html=True)
+if radar:
+    cols=st.columns(len(radar))
+    for i,row in enumerate(radar):
+        with cols[i]:
+            if row[1] is None:
+                st.markdown(f"<div class='radar'><div class='nm'>{row[0]}</div>"
+                            f"<div class='px' style='color:{FAINT}'>keine Daten</div></div>",unsafe_allow_html=True)
+            else:
+                nm,price,sig,icon,col,ph=row
+                st.markdown(f"<div class='radar'><div class='nm'>{nm}</div>"
+                            f"<div class='px'>{price:,.0f}</div>"
+                            f"<span class='pill' style='background:{col}1f;color:{col};border:1px solid {col}55'>{icon} {sig}</span>"
+                            f"<div class='md'>{ph['modus']} · κØ {ph['mean_kappa']:.2f}</div></div>",
+                            unsafe_allow_html=True)
 
 # ============================================================
 #  2) DETAILANALYSE
 # ============================================================
 st.markdown(f"## <span class='num'>2</span> Detailanalyse — {market_name}", unsafe_allow_html=True)
-cf,used=get_data(tuple(MARKETS[market_name]),period,interval)
+with st.spinner(f"Lade {market_name} ..."):
+    cf,used=get_data(tuple(MARKETS[market_name]),period,interval)
 if cf is None:
-    st.error("Keine Daten für den gewählten Detailmarkt.")
+    st.warning(f"Für {market_name} konnten gerade keine Daten geladen werden. "
+               f"Bitte einen anderen Markt oder eine andere Granularität wählen – oder kurz erneut versuchen.")
 else:
     closes=cf[-min(len(cf),300):]; price=float(cf[-1])
     ph=analyse(closes,50); sig,icon,col=signal_from(ph,drift_th,kappa_min)
