@@ -204,6 +204,16 @@ with st.expander("Was bedeuten die Signale?"):
         "keine Anlageberatung._"
     )
 
+with st.expander("Was bedeuten Drift und Aussagekraft?"):
+    st.markdown(
+        "- **Drift:** Stärke und Richtung der Bewegung. Hoch = klarer Trend, "
+        "nahe Null = seitwärts.\n"
+        "- **Aussagekraft (κ):** Wie verlässlich das Signal ist. Hoch = Struktur "
+        "eindeutig, niedrig = unsicher/blind.\n\n"
+        "_Über die Regler links legst du fest, ab welcher Drift und welcher "
+        "Mindest-Aussagekraft ShiftWN überhaupt ein Signal vergibt._"
+    )
+
 # ============================================================
 #  0) LIVE-BITCOIN  (Live-Analyse, 5-Minuten, mit Signal-Verlauf)
 #     Reine Analyse – kein Geld, keine Order-Ausführung.
