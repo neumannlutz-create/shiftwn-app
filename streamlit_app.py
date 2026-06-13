@@ -119,6 +119,11 @@ def signal_from(ph,drift_th=0.06,kappa_min=0.35):
     if ph["mean_kappa"]>kappa_min and ph["drift"]<-drift_th: return "HEDGE_SELL","▼",SELL
     return "HOLD","■",HOLD
 
+# Anzeige-Beschriftung (intern bleiben die Schlüssel HEDGE_BUY etc. unverändert).
+# Neutrale Zustandsworte statt Handlungsworte – siehe Erklärkasten oben.
+LABEL = {"HEDGE_BUY":"Aufwärts-kohärent", "HEDGE_SELL":"Abwärts-kohärent",
+         "SCHOCK":"Regime-Bruch", "HOLD":"Keine Kohärenz"}
+
 def fibonacci_levels(c):
     hi,lo=np.max(c),np.min(c); d=hi-lo
     return {"0.0%":hi,"23.6%":hi-.236*d,"38.2%":hi-.382*d,"50.0%":hi-.5*d,"61.8%":hi-.618*d,"78.6%":hi-.786*d,"100.0%":lo}
@@ -186,6 +191,19 @@ st.title("⚡ ShiftWN AI")
 st.markdown(f"<div class='app-sub'>Adaptive geometrische Marktanalyse · Patent EPA EP25221251.9 · "
             f"Stand {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</div>", unsafe_allow_html=True)
 
+# ---- Bedienungsanleitung: Was bedeuten die Signale? ----
+with st.expander("Was bedeuten die Signale?"):
+    st.markdown(
+        "**ShiftWN beschreibt die Marktstruktur, nicht deine Handlung.**\n\n"
+        "- **Aufwärts-kohärent** (früher BUY): Aufwärtsbewegung trägt stabil.\n"
+        "- **Abwärts-kohärent** (früher SELL): Abwärtsbewegung trägt stabil.\n"
+        "- **Regime-Bruch** (früher SCHOCK): Struktur bricht — höchste Warnung.\n"
+        "- **Keine Kohärenz** (HOLD): kein klarer Zustand.\n\n"
+        "_„Aufwärts/abwärts\" meint den Markt, nicht deine Position. Ein Käufer und "
+        "ein Verkäufer ziehen daraus gegenteilige Schlüsse. Signalgeber, keine Order — "
+        "keine Anlageberatung._"
+    )
+
 # ============================================================
 #  0) LIVE-BITCOIN  (Live-Analyse, 5-Minuten, mit Signal-Verlauf)
 #     Reine Analyse – kein Geld, keine Order-Ausführung.
@@ -231,7 +249,7 @@ else:
     with bL:
         b1,b2,b3,b4 = st.columns(4)
         b1.metric("Bitcoin (5-Min)", f"{btc_price:,.0f}")
-        b2.metric("ShiftWN-Signal", f"{btc_icon} {btc_sig}")
+        b2.metric("ShiftWN-Signal", f"{btc_icon} {LABEL.get(btc_sig, btc_sig)}")
         b3.metric("Drift", f"{btc_ph['drift']:+.3f}")
         b4.metric("Aussagekraft Ø", f"{btc_ph['mean_kappa']:.2f}")
         if btc_ph["regime_break"]:
@@ -257,7 +275,7 @@ else:
             sig_col = {"HEDGE_BUY":BUY,"HEDGE_SELL":SELL,"HOLD":HOLD,"SCHOCK":SHOCK}.get(h["signal"],MUTED)
             st.markdown(f"<div class='radar' style='padding:8px 12px;margin-bottom:6px'>"
                         f"<span style='color:{MUTED};font-size:.78rem'>{h['zeit']}</span> · "
-                        f"<span style='color:{sig_col};font-weight:700'>{h['signal']}</span><br>"
+                        f"<span style='color:{sig_col};font-weight:700'>{LABEL.get(h['signal'], h['signal'])}</span><br>"
                         f"<span style='color:{FAINT};font-size:.74rem'>{h['preis']:,.0f} · {h['modus']} · Drift {h['drift']:+.2f}</span></div>",
                         unsafe_allow_html=True)
     st.caption("Live-Analyse zur Beobachtung – ShiftWN ist Signalgeber, keine Order-Ausführung und keine Anlageberatung.")
@@ -324,7 +342,7 @@ for i,row in enumerate(radar):
             nm,price,sig,icon,col,ph=row
             st.markdown(f"<div class='radar'><div class='nm'>{nm}</div>"
                         f"<div class='px'>{price:,.0f}</div>"
-                        f"<span class='pill' style='background:{col}1f;color:{col};border:1px solid {col}55'>{icon} {sig}</span>"
+                        f"<span class='pill' style='background:{col}1f;color:{col};border:1px solid {col}55'>{icon} {LABEL.get(sig, sig)}</span>"
                         f"<div class='md'>{ph['modus']} · κØ {ph['mean_kappa']:.2f}</div></div>",
                         unsafe_allow_html=True)
 
@@ -343,7 +361,7 @@ else:
     if used and used not in DIREKT: st.caption(f"Daten über Ersatz-Ticker `{used}`.")
 
     m1,m2,m3,m4=st.columns(4)
-    m1.metric("Signal",f"{icon} {sig}")
+    m1.metric("Signal",f"{icon} {LABEL.get(sig, sig)}")
     m2.metric("Preis",f"{price:,.2f}")
     m3.metric("Drift",f"{ph['drift']:+.3f}")
     m4.metric("Aussagekraft Ø",f"{ph['mean_kappa']:.2f}")
@@ -391,7 +409,7 @@ else:
             konf=f" · Konfidenz {ki['confidence']} %" if ki["confidence"] is not None else ""
             st.caption(f"Richtung {d}{konf} · Ziel {ki['target']} · Stop {ki['stop']}")
         with b:
-            st.markdown("**ShiftWN sagt:**"); st.success(f"{icon} {sig}")
+            st.markdown("**ShiftWN sagt:**"); st.success(f"{icon} {LABEL.get(sig, sig)}")
             st.caption(f"Modus {ph['modus']} · Drift {ph['drift']:+.3f} · κØ {ph['mean_kappa']:.2f}")
         sdir = {"HEDGE_BUY":"BUY", "HEDGE_SELL":"SELL", "HOLD":"NEUTRAL", "SCHOCK":"SHOCK"}[sig]
         kappa_txt = f"{ph['mean_kappa']:.2f}"
@@ -409,9 +427,9 @@ else:
         elif d == sdir:
             st.success(f"ShiftWN bestätigt: {d} ist mit der Marktgeometrie kohärent (Modus {ph['modus']}).")
         elif d == "HOLD":
-            st.warning(f"KI sagt HOLD – ShiftWN sieht jedoch ein klares Signal ({sig}).")
+            st.warning(f"KI sagt HOLD – ShiftWN sieht jedoch ein klares Signal ({LABEL.get(sig, sig)}).")
         else:
-            st.error(f"ShiftWN widerspricht: KI sagt {d}, ShiftWN sagt {sig}.")
+            st.error(f"ShiftWN widerspricht: KI sagt {d}, ShiftWN sagt {LABEL.get(sig, sig)}.")
 
 st.markdown("---")
 st.caption("ShiftWN AI · Patentierter geometrischer Kern (Triangle · Vortex · Impulse FFT · Photonics). "
